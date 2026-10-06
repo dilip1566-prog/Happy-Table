@@ -1,0 +1,232 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   SERVICE — design tokens
+   ---------------------------------------------------------------------------
+   One dark system across all three surfaces.
+
+   Dark started in the kitchen for hard reasons — a KDS sits under hot lamps,
+   is read from two metres away, and a bright panel in a dim pass is a glare
+   source. Carrying it to the guest and manager screens turns that into a
+   house style: a dim dining room, a phone at the table, and a tablet at the
+   pass all stop being the brightest object in the room.
+
+   Warm near-blacks, not blue-greys. A cold UI next to food looks clinical.
+
+   Gradients are almost absent by design. Two exist, both functional: a scrim
+   that keeps text legible over photography, and a sub-5% wash that lifts
+   empty and hero states off the flat ground. No gradient buttons, no
+   gradient text, no gradient cards.
+   =========================================================================== */
+
+@theme {
+  /* --- Ground -----------------------------------------------------------
+     Lifted a step from the original near-black. Still dark enough for a dim
+     dining room and a lamp-lit pass, but with enough separation between
+     canvas, surface and raised that cards read as objects rather than as
+     slightly different shades of the same void. */
+  --color-canvas: #16120f;
+  --color-surface: #211c17;
+  --color-sunken: #1a1613;
+  --color-raised: #2e2822;
+  --color-line: #3a332c;
+  --color-line-strong: #4e463c;
+
+  --color-ink: #fbf9f6;
+  --color-ink-soft: #c5bcb1;
+  --color-ink-faint: #9a9085;
+
+  /* Terracotta, lifted for dark ground. Controls and selection only, so
+     "this is a button" never competes with "this is a state". */
+  --color-accent: #e8703a;
+  --color-accent-hover: #f5834f;
+  --color-accent-wash: #2f1c13;
+
+  /* Kitchen aliases — the KDS keeps its own names, same values, so the two
+     never drift apart. */
+  --color-kds: #16120f;
+  --color-kds-surface: #211c17;
+  --color-kds-raised: #2e2822;
+  --color-kds-line: #3a332c;
+  --color-kds-ink: #fbf9f6;
+  --color-kds-ink-soft: #c5bcb1;
+
+  /* --- Ticket / table states --------------------------------------------
+     One hue per state, identical on every surface. The -bg tints are dark
+     enough to sit on the ground without glowing. */
+  --color-state-new: #f5ab3c;
+  --color-state-new-bg: #362613;
+  --color-state-fire: #5fa8f5;
+  --color-state-fire-bg: #16273a;
+  --color-state-ready: #4ecd88;
+  --color-state-ready-bg: #142e21;
+  --color-state-late: #f56a5e;
+  --color-state-late-bg: #371a17;
+
+  /* A table between guests: settled but not yet wiped down. Its own hue
+     because "nobody is sitting here" and "you may seat someone here" are
+     different facts, and seating a party at a dirty table is the mistake
+     this colour exists to prevent. */
+  --color-state-clear: #b08cf0;
+  --color-state-clear-bg: #261e3a;
+
+  /* --- Diet & allergen ---------------------------------------------------
+     Brightened so the statutory marks stay legible on dark. */
+  --color-vegan: #4ec97f;
+  --color-veg: #63b85f;
+  --color-nuts: #e0a33c;
+
+  /* --- Type -------------------------------------------------------------- */
+  --font-display: 'Instrument Serif', ui-serif, Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* --- Radius ------------------------------------------------------------ */
+  --radius-card: 14px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+
+  /* --- Elevation ---------------------------------------------------------
+     On dark, depth reads from the border first. Shadow only lifts floating
+     things off the page. */
+  --shadow-raise: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.4);
+  --shadow-sheet: 0 -12px 48px rgb(0 0 0 / 0.6);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  color-scheme: dark; /* native controls, scrollbars and form UI follow */
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+button,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* Swipeable rails: no visible scrollbar, snap to items. */
+.rail {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-snap-type: x proximity;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* Vertical scroll areas keep a thin, dark scrollbar on desktop. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+/* Gradient 1 of 2 — scrim for text over photography. */
+.scrim {
+  background-image: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.85) 0%,
+    rgb(0 0 0 / 0.45) 45%,
+    rgb(0 0 0 / 0) 100%
+  );
+}
+
+/* Gradient 2 of 2 — a barely-there warm lift on empty and hero states. */
+.wash {
+  background-image: radial-gradient(
+    120% 100% at 50% 0%,
+    rgb(232 112 58 / 0.05) 0%,
+    rgb(232 112 58 / 0) 62%
+  );
+}
+
+/* Numerals that must not jitter as they tick. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Safe-area helpers for notched phones. */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(240 160 42 / 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgb(240 160 42 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(240 160 42 / 0);
+  }
+}
+.ring-live {
+  animation: pulse-ring 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.22s ease-out both;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.sheet-up {
+  animation: sheet-up 0.26s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
