@@ -6,6 +6,7 @@ import {
   markTableCleared,
   mergeSessions,
   rejectTable,
+  suggestAccessCode,
 } from '../../data'
 import { useTables } from '../../hooks/useTables'
 import { useSessions } from '../../hooks/useSessions'
@@ -43,6 +44,7 @@ export default function ManagerDashboard() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+  const [issued, setIssued] = useState(null) // the code to read out after seating
 
   const canSeat = can('floor.seat')
   const canLink = can('floor.link')
@@ -64,7 +66,7 @@ export default function ManagerDashboard() {
    * original path — a brand new party. With one, the tables land on a session
    * that may already have food on the way.
    */
-  const seat = async (partyName, joinSessionId) => {
+  const seat = async (partyName, joinSessionId, accessCode) => {
     setBusy(true)
     setError(null)
     const list = [...selected].sort((a, b) => a - b)
@@ -78,13 +80,10 @@ export default function ManagerDashboard() {
           } — one bill`
         )
       } else {
-        await approveAndLinkTables(selected, { staff: user, partyName })
-        const who = partyName?.trim()
-        flash(
-          `${who ? `${who} seated at table` : 'Table'}${list.length > 1 ? 's' : ''} ${list.join(
-            ' + '
-          )} by ${user?.name}`
-        )
+        await approveAndLinkTables(selected, { staff: user, partyName, accessCode })
+        // The code is the whole point of the new flow, so it gets its own
+        // card rather than a banner that scrolls away before it is read out.
+        setIssued({ code: accessCode, tables: list, partyName: partyName?.trim() || null })
       }
       setSelected([])
       setSeating(false)
@@ -204,6 +203,8 @@ export default function ManagerDashboard() {
         </div>
       )}
 
+      {issued && <CodeHandoverCard {...issued} onClose={() => setIssued(null)} />}
+
       {seating && (
         <SeatPartyDialog
           tables={[...selected].sort((a, b) => a - b)}
@@ -304,10 +305,24 @@ function TableTile({ table, session, selected, canSeat, onSelect, onOpen, onDism
         )}
 
         {busy && (
-          <p className="tabular mt-0.5 truncate text-[11px] text-ink-faint">
-            {server && `${server} · `}
-            {session ? `${minutesSince(session.created_at)} min` : 'seated'}
-          </p>
+          <>
+            {/* The code is what staff get asked for, so it sits on the tile
+                rather than one tap away inside the table dialog. */}
+            {session?.access_code && (
+              <p className="mt-1.5 flex items-baseline gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-faint">
+                  Code
+                </span>
+                <span className="tabular text-[17px] font-bold leading-none text-accent">
+                  {session.access_code}
+                </span>
+              </p>
+            )}
+            <p className="tabular mt-1 truncate text-[11px] text-ink-faint">
+              {server && `${server} · `}
+              {session ? `${minutesSince(session.created_at)} min` : 'seated'}
+            </p>
+          </>
         )}
         {clearing && (
           <p className="mt-1 text-[11px] text-ink-faint">Guests gone &middot; needs a reset</p>
@@ -341,6 +356,15 @@ function TableTile({ table, session, selected, canSeat, onSelect, onOpen, onDism
 function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
   const [name, setName] = useState('')
   const [joinId, setJoinId] = useState(null)
+  // Suggested once per dialog so it does not change under the staff member
+  // while they are typing the party name.
+  const [code, setCode] = useState(() => {
+    try {
+      return suggestAccessCode()
+    } catch {
+      return ''
+    }
+  })
 
   const open = sessions ?? []
   const joined = open.find((s) => s.session_id === joinId) ?? null
@@ -354,7 +378,12 @@ function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
       onClose={onCancel}
       width="max-w-sm"
       footer={
-        <Button full size="xl" disabled={busy} onClick={() => onSeat(name, joinId)}>
+        <Button
+          full
+          size="xl"
+          disabled={busy || (!joinId && code.trim().length < 2)}
+          onClick={() => onSeat(name, joinId, code)}
+        >
           {busy ? 'Seating…' : joined ? `Add to ${label(joined)}` : 'Seat guests'}
         </Button>
       }
@@ -410,6 +439,22 @@ function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
               className={inputClass}
             />
           </Field>
+
+          <div className="mt-4">
+            <Field
+              label="Table code"
+              hint="Read this out to the table — it opens their menu straight away"
+            >
+              <input
+                value={code}
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, '').slice(0, 3))
+                }
+                inputMode="numeric"
+                className={`${inputClass} tabular text-center text-[22px] font-bold tracking-[0.25em]`}
+              />
+            </Field>
+          </div>
         </form>
       ) : (
         <div>
@@ -494,6 +539,9 @@ function TableDialog({
         </div>
 
         <dl className="divide-y divide-line rounded-card border border-line bg-sunken px-4">
+          {session?.access_code && (
+            <Row label="Table code" value={String(session.access_code)} />
+          )}
           <Row label="Seats" value={String(table.seats)} />
           {session && <Row label="Covers" value={String(session.covers)} />}
           {session && <Row label="Here for" value={`${minutesSince(session.created_at)} min`} />}
@@ -590,5 +638,46 @@ function Row({ label, value }) {
       <dt className="text-ink-faint">{label}</dt>
       <dd className="tabular font-semibold">{value}</dd>
     </div>
+  )
+}
+
+
+/**
+ * The hand-over card.
+ *
+ * Shown immediately after seating, with the code set large enough to read
+ * across a table in low light. It is the one thing the staff member must
+ * carry from their screen to the guest, so it gets a screen of its own rather
+ * than a toast that disappears while they are still walking over.
+ */
+function CodeHandoverCard({ code, tables, partyName, onClose }) {
+  return (
+    <Sheet title="Tell the table" onClose={onClose} width="max-w-sm">
+      <div className="text-center">
+        <p className="text-[14px] text-ink-soft">
+          {partyName ? (
+            <>
+              <strong className="text-ink">{partyName}</strong> seated at table
+            </>
+          ) : (
+            'Seated at table'
+          )}
+          {tables.length > 1 ? 's' : ''} {tables.join(' + ')}
+        </p>
+
+        <p className="tabular my-6 text-[88px] font-bold leading-none tracking-[-0.03em] text-accent">
+          {code}
+        </p>
+
+        <p className="mx-auto max-w-[17rem] text-[14px] leading-relaxed text-ink-soft">
+          Ask them to go to the menu page and enter <strong className="text-ink">{code}</strong>.
+          Their menu opens straight away — no waiting for approval.
+        </p>
+      </div>
+
+      <Button full size="xl" className="mt-7" onClick={onClose}>
+        Done
+      </Button>
+    </Sheet>
   )
 }

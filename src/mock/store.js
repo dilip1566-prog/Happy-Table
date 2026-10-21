@@ -13,6 +13,7 @@
  * what you want when reviewing a design.
  */
 import {
+  RESTAURANT,
   MENU,
   SEED_SOLD_OUT,
   seedOrders,
@@ -158,7 +159,58 @@ export async function knockOnTable(tableNumber) {
  * looking after a table. Without it the floor plan can say a table is busy
  * but not whose it is, which is the first thing anyone actually asks.
  */
-export async function approveAndLinkTables(tableNumbers, { covers, staff, partyName } = {}) {
+/**
+ * Table codes start at 51 so they can never be mistaken for a table number.
+ * A guest who hears "sixty-five" and a room numbered 1-20 cannot collide, and
+ * staff reading one out loud never has to clarify which kind of number it is.
+ *
+ * Two digits is deliberate: it is said once across a noisy dining room and
+ * typed with a thumb. If a very large restaurant ever exhausts 51-99 it rolls
+ * on to three digits rather than refusing to seat anyone.
+ */
+const CODE_FLOOR = 51
+const CODE_CEILING = 99
+
+function codesInUse() {
+  return new Set(
+    state.sessions.filter((s) => s.status === 'active').map((s) => String(s.access_code))
+  )
+}
+
+export function suggestAccessCode() {
+  const taken = codesInUse()
+  const free = []
+  for (let n = CODE_FLOOR; n <= CODE_CEILING; n += 1) {
+    if (!taken.has(String(n))) free.push(n)
+  }
+  if (free.length) return String(free[Math.floor(Math.random() * free.length)])
+
+  for (let n = 100; n <= 999; n += 1) {
+    if (!taken.has(String(n))) return String(n)
+  }
+  throw new Error('No table codes left. Close a tab first.')
+}
+
+/** Resolve a code a guest has typed in. */
+export async function findSessionByCode(code) {
+  await wait(160)
+  const wanted = String(code ?? '').trim()
+  const session = state.sessions.find(
+    (s) => s.status === 'active' && String(s.access_code) === wanted
+  )
+  if (!session) return null
+  return {
+    session_id: session.session_id,
+    party_name: session.party_name ?? null,
+    table_number: (session.linked_tables ?? [])[0] ?? null,
+    linked_tables: session.linked_tables ?? [],
+  }
+}
+
+export async function approveAndLinkTables(
+  tableNumbers,
+  { covers, staff, partyName, accessCode } = {}
+) {
   await wait()
   if (!tableNumbers?.length) throw new Error('Select at least one table to approve.')
 
@@ -177,6 +229,7 @@ export async function approveAndLinkTables(tableNumbers, { covers, staff, partyN
     created_at: new Date(),
     covers: covers ?? seats,
     party_name: String(partyName || '').trim() || null,
+    access_code: String(accessCode || '').trim() || suggestAccessCode(),
     opened_by: staff ? { id: staff.id, name: staff.name, role: staff.role } : null,
   })
 
@@ -591,4 +644,38 @@ export async function resetRolePermissions(role) {
   if (role === 'owner') return
   state.rolePermissions[role] = [...(DEFAULT_ROLE_PERMISSIONS[role] ?? [])]
   emit('access')
+}
+
+
+// ---------------------------------------------------------------------------
+// Tenant — the mock pretends to be whichever restaurant was asked for, so the
+// multi-tenant routing can be exercised with no Firebase project at all.
+// ---------------------------------------------------------------------------
+
+/**
+ * A small fixed roster, so the unknown-subdomain path is real rather than
+ * theoretical: anything not listed here 404s exactly as it will in Firestore.
+ */
+const DEMO_TENANTS = {
+  bobbys: { name: RESTAURANT.name, tagline: RESTAURANT.tagline, status: 'active' },
+  royalsweetmart: {
+    name: 'Royal Sweet Mart',
+    tagline: 'Sweets & savouries',
+    status: 'active',
+  },
+  // Kept suspended on purpose: it is the only way to see that screen.
+  closedcafe: { name: 'Closed Cafe', tagline: 'Unpaid account', status: 'suspended' },
+}
+
+export async function lookupRestaurantBySlug(slug) {
+  await wait(120)
+  const wanted = String(slug || '').toLowerCase()
+  const found = DEMO_TENANTS[wanted]
+  if (!found) return null
+  return {
+    id: wanted,
+    subdomain: wanted,
+    currency: 'GBP',
+    ...found,
+  }
 }

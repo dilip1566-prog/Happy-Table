@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { knockOnTable, submitOrder } from '../../data'
+import { useNavigate, useParams } from 'react-router-dom'
+import { findSessionByCode, knockOnTable, submitOrder } from '../../data'
 import { useTableStatus } from '../../hooks/useTables'
 import { useMenu } from '../../hooks/useMenu'
 import { useInventory } from '../../hooks/useInventory'
 import { useMyOrders } from '../../hooks/useActiveOrders'
 import { CATEGORIES, RESTAURANT } from '../../mock/data'
 import { formatMoney } from '../../lib/format'
-import { Banner, Sheet, Spinner } from '../../components/ui'
+import { Banner, Button, Sheet, Spinner, inputClass } from '../../components/ui'
 import DishCard from './DishCard'
 import CartSheet from './CartSheet'
 import OrderTracker from './OrderTracker'
@@ -26,6 +26,11 @@ import WaitingRoom from './WaitingRoom'
  */
 export default function CustomerView() {
   const { tableId } = useParams()
+  const navigate = useNavigate()
+
+  // No table in the URL means nobody has been seated yet: the menu is open to
+  // read, but nothing can be sent to the kitchen until a code is entered.
+  const browsing = !tableId
   const { table, loading: tableLoading } = useTableStatus(tableId)
   const { menu, loading: menuLoading } = useMenu()
   const { soldOutItems, isSoldOut } = useInventory()
@@ -42,13 +47,23 @@ export default function CustomerView() {
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState(null)
   const [ordersOpen, setOrdersOpen] = useState(false)
+  // Greets the guest the moment the menu opens, so the one thing standing
+  // between them and ordering is stated up front rather than discovered when
+  // they tap Add. Dismissible — reading the menu never requires a code.
+  const [codeOpen, setCodeOpen] = useState(() => !tableId)
 
   const knocked = useRef(false)
   useEffect(() => {
-    if (knocked.current) return
+    if (browsing || knocked.current) return
     knocked.current = true
     knockOnTable(tableId).catch(setError)
-  }, [tableId])
+  }, [browsing, tableId])
+
+  // Once a code lands the route gains a table, and the sheet that asked for
+  // it has nothing left to ask — without this it stays open over the menu.
+  useEffect(() => {
+    if (!browsing) setCodeOpen(false)
+  }, [browsing])
 
   const [wasSeated, setWasSeated] = useState(false)
   useEffect(() => {
@@ -109,14 +124,18 @@ export default function CustomerView() {
   const total = lines.reduce((sum, l) => sum + l.price * l.qty, 0)
   const count = lines.reduce((sum, l) => sum + l.qty, 0)
 
-  const setQty = (id, qty) =>
-    setCart((c) => {
+  const setQty = (id, qty) => {
+    // Reading the menu is free. Ordering is not — tapping Add asks for the
+    // code rather than silently doing nothing, so the gate explains itself.
+    if (browsing) return setCodeOpen(true)
+    return setCart((c) => {
       if (qty <= 0) {
         const { [id]: _drop, ...rest } = c
         return rest
       }
       return { ...c, [id]: qty }
     })
+  }
 
   const jumpTo = (id) => {
     setActiveCategory(id)
@@ -139,7 +158,7 @@ export default function CustomerView() {
     }
   }
 
-  if (tableLoading) {
+  if (!browsing && tableLoading) {
     return (
       <div className="grid min-h-full place-items-center">
         <Spinner label="Finding your table" />
@@ -147,7 +166,7 @@ export default function CustomerView() {
     )
   }
 
-  if (!table) {
+  if (!browsing && !table) {
     return (
       <div className="grid min-h-full place-items-center px-8 text-center">
         <div>
@@ -161,14 +180,15 @@ export default function CustomerView() {
     )
   }
 
-  if (status !== 'occupied') {
+  if (!browsing && status !== 'occupied') {
     return <WaitingRoom tableId={tableId} status={status} wasSeated={wasSeated} />
   }
 
   return (
-    <div className="min-h-full pb-32">
+    <div className="min-h-full pb-10">
       <Hero
         table={table}
+        browsing={browsing}
         placedCount={myOrders.length}
         onViewOrders={() => setOrdersOpen(true)}
       />
@@ -176,7 +196,8 @@ export default function CustomerView() {
       {/* Sticky nav: search always reachable, categories scroll horizontally. */}
       <div className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur-lg">
         <div className="mx-auto max-w-6xl px-4 pt-2.5 sm:px-6">
-          <div className="relative">
+          <div className="flex items-center gap-2.5">
+          <div className="relative min-w-0 flex-1">
             <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-faint">
               ⌕
             </span>
@@ -196,6 +217,22 @@ export default function CustomerView() {
                 &times;
               </button>
             )}
+          </div>
+
+          {/* The running order sits beside the search rather than across the
+              bottom of the screen: a bar pinned over the menu covered the very
+              dishes the guest was still choosing between. */}
+          {count > 0 && (
+            <button
+              onClick={() => setCartOpen(true)}
+              className="rise flex h-11 shrink-0 items-center gap-2.5 rounded-control bg-accent px-3.5 text-white shadow-float transition-transform active:scale-95"
+            >
+              <span className="tabular grid size-6 place-items-center rounded-full bg-white/25 text-[12px] font-bold">
+                {count}
+              </span>
+              <span className="tabular text-[15px] font-bold">{formatMoney(total)}</span>
+            </button>
+          )}
           </div>
         </div>
 
@@ -301,22 +338,25 @@ export default function CustomerView() {
         </div>
       )}
 
-      {count > 0 && !confirmation && (
+      {browsing && (
         <div className="pb-safe fixed inset-x-0 bottom-0 z-40 px-4">
           <button
-            onClick={() => setCartOpen(true)}
-            className="rise mx-auto flex w-full max-w-lg items-center justify-between rounded-card bg-accent px-5 py-4 text-white shadow-float transition-transform active:scale-[0.99]"
+            onClick={() => setCodeOpen(true)}
+            className="rise mx-auto flex w-full max-w-lg items-center justify-center gap-2.5 rounded-card bg-accent px-5 py-4 text-white shadow-float transition-transform active:scale-[0.99]"
           >
-            <span className="flex items-center gap-2.5">
-              <span className="tabular grid size-6 place-items-center rounded-full bg-white/25 text-[12px] font-bold">
-                {count}
-              </span>
-              <span className="text-[15px] font-semibold">Your order</span>
-            </span>
-            <span className="tabular text-[15px] font-semibold">{formatMoney(total)}</span>
+            <span className="text-[15px] font-semibold">Enter your code to order</span>
           </button>
         </div>
       )}
+
+      {codeOpen && (
+        <CodeSheet
+          onClose={() => setCodeOpen(false)}
+          onFound={(table_number) => navigate(`/customer/${table_number}`)}
+        />
+      )}
+
+
 
       {ordersOpen && (
         <Sheet title="Ordered" width="max-w-md" onClose={() => setOrdersOpen(false)}>
@@ -332,6 +372,8 @@ export default function CustomerView() {
 
       {cartOpen && (
         <CartSheet
+          partyName={table?.party_name ?? null}
+          tableNumber={table?.table_number ?? null}
           lines={lines}
           total={total}
           submitting={submitting}
@@ -344,7 +386,7 @@ export default function CustomerView() {
   )
 }
 
-function Hero({ table, placedCount, onViewOrders }) {
+function Hero({ table, browsing, placedCount, onViewOrders }) {
   return (
     <header className="wash border-b border-line">
       <div className="mx-auto flex max-w-6xl items-end justify-between gap-4 px-4 py-7 sm:px-6 sm:py-9">
@@ -372,9 +414,11 @@ function Hero({ table, placedCount, onViewOrders }) {
               </span>
             </button>
           )}
-          <span className="rounded-pill border border-line-strong bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-soft">
-            Table {table.table_number}
-          </span>
+          {!browsing && (
+            <span className="rounded-pill border border-line-strong bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-soft">
+              Table {table.table_number}
+            </span>
+          )}
         </div>
       </div>
     </header>
@@ -396,5 +440,138 @@ function Legend() {
         Please tell your server about any allergies before ordering.
       </p>
     </footer>
+  )
+}
+
+
+/**
+ * The gate between reading and ordering.
+ *
+ * A guest can browse the whole menu before anyone reaches them — deciding what
+ * they want is the part that takes time, and making them wait for a server
+ * before they can even look is the thing this flow exists to remove. The code
+ * only appears once a member of staff has actually acknowledged the table, so
+ * it is the acknowledgement, not a password.
+ */
+function CodeSheet({ onClose, onFound }) {
+  const [code, setCode] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState(null)
+  const [found, setFound] = useState(null)
+
+  /**
+   * The code is checked as it is typed, so the moment it is right the guest
+   * sees whose table they are joining and goes straight through. A correct
+   * code should not then need a button press to confirm what it already is.
+   */
+  useEffect(() => {
+    const entered = code.trim()
+    if (entered.length < 2) {
+      setFound(null)
+      return
+    }
+
+    let cancelled = false
+    setChecking(true)
+
+    findSessionByCode(entered)
+      .then((match) => {
+        if (cancelled) return
+        if (match?.table_number) {
+          setFound(match)
+          setError(null)
+          // A breath so the name registers before the menu replaces it.
+          setTimeout(() => {
+            if (!cancelled) onFound(match.table_number)
+          }, 650)
+        } else {
+          setFound(null)
+        }
+      })
+      .catch((err) => !cancelled && setError(err))
+      .finally(() => !cancelled && setChecking(false))
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code])
+
+  const submit = async (event) => {
+    event?.preventDefault()
+    const entered = code.trim()
+    if (entered.length < 2) return
+
+    if (found?.table_number) return onFound(found.table_number)
+
+    setError(`Code ${entered} is not open yet. Ask your server for the number.`)
+    setCode('')
+  }
+
+  return (
+    <Sheet title={found ? `${found.party_name ?? 'Your table'} · Table No ${found.table_number}` : 'Your table code'} width="max-w-sm" onClose={onClose}>
+      <form onSubmit={submit}>
+        <p className="text-[15px] font-medium leading-relaxed text-ink">
+          Please key in your code — or ask your waiter for the code number.
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-faint">
+          You can browse the whole menu without one. The code is only needed to
+          send an order to the kitchen.
+        </p>
+
+        <input
+          autoFocus
+          value={code}
+          onChange={(event) => {
+            setError(null)
+            setCode(event.target.value.replace(/\D/g, '').slice(0, 3))
+          }}
+          inputMode="numeric"
+          autoComplete="off"
+          aria-label="Table code"
+          // Dashes, not a sample number. At this size a grey "65" reads as a
+          // value that is already filled in, and the guest types nothing.
+          placeholder="– –"
+          className={`${inputClass} tabular mt-5 h-16 text-center text-[30px] font-bold tracking-[0.3em] placeholder:font-normal placeholder:tracking-[0.2em] placeholder:text-ink-faint/50`}
+        />
+
+        {found && (
+          <p className="rise mt-3 rounded-control border border-state-ready/35 bg-state-ready-bg px-4 py-3 text-center">
+            <span className="block text-[17px] font-bold text-state-ready">
+              {found.party_name ?? 'Your table'}
+            </span>
+            <span className="tabular mt-0.5 block text-[13px] text-state-ready/80">
+              Table No {found.table_number} &middot; opening your menu…
+            </span>
+          </p>
+        )}
+
+        <Button
+          full
+          size="xl"
+          className="mt-3"
+          disabled={checking || code.trim().length < 2}
+          onClick={submit}
+        >
+          {checking ? 'Checking…' : found ? 'Start ordering' : 'Check code'}
+        </Button>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-3 w-full py-2 text-center text-[13px] font-medium text-ink-faint transition-colors hover:text-ink"
+        >
+          You can still browse the menu without a code
+        </button>
+
+        {error && (
+          <div className="mt-4">
+            <Banner tone="bad" onDismiss={() => setError(null)}>
+              {error}
+            </Banner>
+          </div>
+        )}
+      </form>
+    </Sheet>
   )
 }

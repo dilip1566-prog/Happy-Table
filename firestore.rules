@@ -1,60 +1,153 @@
 rules_version = '2';
 
-// ---------------------------------------------------------------------------
-// STARTING POINT ONLY - these rules are open enough to run the app on a closed
-// restaurant Wi-Fi, and are NOT safe for the public internet as written.
-// Anyone who can reach the project can currently seat themselves and edit the
-// menu. Before going live, put the manager and kitchen surfaces behind Firebase
-// Auth and gate the write rules below on request.auth.
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Multi-tenant isolation.
+//
+// Every restaurant's data lives under restaurants/{rid}. A signed-in staff
+// member has a document at restaurants/{rid}/staff/{uid}; that document IS
+// their authorisation. One `staffOf(rid)` lookup answers three questions at
+// once: do they belong to this restaurant, are they still employed, and what
+// may they do.
+//
+// This deliberately avoids custom claims, which would need the Admin SDK and
+// therefore Cloud Functions and the Blaze plan. The trade is one extra
+// document read per rule evaluation — acceptable at this scale, and it keeps
+// a leaver's access removable with a single Firestore write.
+//
+// UNTESTED against a live project. Run these through the rules simulator
+// before any real data exists.
+// ===========================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Tables: any device may read, and a customer may only move a table from
-    // "available" to "pending_approval". Promotion to "occupied" is a staff
-    // action, which is the one thing this ruleset does pin down.
-    match /tables/{tableId} {
-      allow read: if true;
+    // --- helpers ---------------------------------------------------------
 
-      allow update: if
-        // customer knock
-        (resource.data.status == 'available'
-         && request.resource.data.status == 'pending_approval'
-         && request.resource.data.table_number == resource.data.table_number)
-        // staff actions (seat, dismiss, free) - lock this to request.auth != null
-        || true;
-
-      allow create, delete: if false;
+    function staffDoc(rid) {
+      return get(/databases/$(database)/documents/restaurants/$(rid)/staff/$(request.auth.uid));
     }
 
-    match /sessions/{sessionId} {
-      allow read: if true;
-      allow create, update: if true;  // lock to staff auth
-      allow delete: if false;
+    // Employed here, right now. isActive is the whole revocation mechanism:
+    // flip it false and the next request fails, with no token to revoke.
+    function isStaff(rid) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/restaurants/$(rid)/staff/$(request.auth.uid))
+        && staffDoc(rid).data.isActive == true;
     }
 
-    match /menu/{itemId} {
-      allow read: if true;
-      allow write: if true;           // lock to staff auth
+    function roleOf(rid) {
+      return staffDoc(rid).data.role;
     }
 
-    match /store_config/{docId} {
-      allow read: if true;
-      allow write: if true;           // lock to staff auth
+    function isOwner(rid) {
+      return isStaff(rid) && roleOf(rid) == 'owner';
     }
 
-    match /orders/{orderId} {
+    function isManagerUp(rid) {
+      return isStaff(rid) && roleOf(rid) in ['owner', 'manager'];
+    }
+
+    // Us, not them. Set once by hand in the console on your own account.
+    function isPlatformAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+    }
+
+    // --- the restaurant record -------------------------------------------
+
+    match /restaurants/{rid} {
+      // A guest must be able to resolve a subdomain before signing in to
+      // anything, so the record itself is public. Keep it to presentation
+      // fields — never put billing or contact details on this document.
       allow read: if true;
+      allow create, delete: if isPlatformAdmin();
+      allow update: if isPlatformAdmin() || isOwner(rid);
 
-      // An order must be created as "pending" with a session and line items.
-      allow create: if
-        request.resource.data.status == 'pending'
-        && request.resource.data.session_id is string
-        && request.resource.data.items.size() > 0;
+      // --- menu ----------------------------------------------------------
+      match /menuItems/{itemId} {
+        allow read: if true;                       // guests browse freely
+        allow write: if isManagerUp(rid);
+      }
 
-      allow update: if true;          // lock to staff auth
-      allow delete: if false;
+      // --- tables ----------------------------------------------------------
+      match /tables/{tableId} {
+        allow read: if true;
+
+        // A guest scanning a QR may knock, and nothing else: available ->
+        // pending_approval, with no other field touched.
+        allow update: if isStaff(rid)
+          || (
+            resource.data.status == 'available'
+            && request.resource.data.status == 'pending_approval'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          );
+
+        allow create, delete: if isManagerUp(rid);
+      }
+
+      // --- sessions --------------------------------------------------------
+      match /sessions/{sessionId} {
+        // Guests need this to redeem a table code. The access_code is
+        // readable, which is why a code alone must never be enough to see
+        // anything private — it only attaches a device to a table.
+        allow read: if true;
+        allow create, update: if isStaff(rid);
+        allow delete: if false;                    // closed, never destroyed
+      }
+
+      // --- orders ----------------------------------------------------------
+      match /orders/{orderId} {
+        allow read: if true;
+
+        // A guest may place an order against an ACTIVE session only, and it
+        // must start as pending with real line items. They may never edit
+        // one afterwards — only the kitchen moves a ticket.
+        allow create: if isStaff(rid)
+          || (
+            request.resource.data.status == 'pending'
+            && request.resource.data.session_id is string
+            && request.resource.data.items.size() > 0
+            && exists(/databases/$(database)/documents/restaurants/$(rid)/sessions/$(request.resource.data.session_id))
+            && get(/databases/$(database)/documents/restaurants/$(rid)/sessions/$(request.resource.data.session_id)).data.status == 'active'
+          );
+
+        allow update: if isStaff(rid);
+        allow delete: if false;                    // cancel, do not erase
+      }
+
+      // --- config: inventory and the permission matrix ----------------------
+      match /config/{docId} {
+        // Guests read the 86 list so sold-out dishes grey out live.
+        allow read: if true;
+        // Only the owner may change who can do what.
+        allow write: if docId == 'access' ? isOwner(rid) : isStaff(rid);
+      }
+
+      // --- staff ------------------------------------------------------------
+      match /staff/{uid} {
+        // Staff see their colleagues; guests see nobody. Email addresses and
+        // roles are not public.
+        allow read: if isStaff(rid);
+
+        // Only the owner hires, changes roles, or deactivates. Note a person
+        // cannot edit their own record — that would let a waiter promote
+        // themselves.
+        allow create, update, delete: if isOwner(rid) || isPlatformAdmin();
+      }
+    }
+
+    // --- platform ----------------------------------------------------------
+
+    match /platformAdmins/{uid} {
+      // Readable by the account itself so the console can check; writable
+      // only from the Firebase console, by hand.
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Anything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

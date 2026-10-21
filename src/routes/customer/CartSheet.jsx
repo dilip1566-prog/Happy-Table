@@ -14,13 +14,26 @@ import { Button, DietMark, NutsMark, Sheet, Stepper } from '../../components/ui'
  *
  * One total, no tax breakdown: menu prices are what the guest pays.
  */
-export default function CartSheet({ lines, total, submitting, onSetQty, onClose, onSubmit }) {
+export default function CartSheet({
+  partyName,
+  tableNumber,
+  lines,
+  total,
+  submitting,
+  onSetQty,
+  onClose,
+  onSubmit,
+}) {
   const count = lines.reduce((sum, line) => sum + line.qty, 0)
   const [photo, setPhoto] = useState(null)
 
   return (
     <Sheet
-      title={`Your order · ${count} item${count === 1 ? '' : 's'}`}
+      title={
+        tableNumber
+          ? `${partyName ?? 'Your order'} · Table No ${tableNumber}`
+          : `Your order · ${count} item${count === 1 ? '' : 's'}`
+      }
       onClose={onClose}
       width="max-w-lg"
       footer={
@@ -34,8 +47,8 @@ export default function CartSheet({ lines, total, submitting, onSetQty, onClose,
           >
             {submitting ? 'Sending…' : `Confirm order · ${formatMoney(total)}`}
           </Button>
-          <p className="mt-2 text-center text-[12px] text-ink-faint">
-            Added to your table&rsquo;s bill. Settle at the end of the meal.
+          <p className="tabular mt-2 text-center text-[12px] text-ink-faint">
+            {count} item{count === 1 ? '' : 's'}
           </p>
         </>
       }
