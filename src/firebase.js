@@ -5,7 +5,7 @@ import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -31,38 +31,6 @@ if (!isConfigured && import.meta.env.DEV) {
   )
 }
 
-// ---- Collection / document names -------------------------------------------
-// Centralised so a typo is a build-time import error, not a silent empty query.
-export const COL = {
-  tables: 'tables',
-  sessions: 'sessions',
-  menu: 'menu',
-  storeConfig: 'store_config',
-  orders: 'orders',
-}
-
-// store_config holds exactly one document, by design: a single doc means a
-// single onSnapshot channel serves every customer device in the restaurant.
-export const INVENTORY_DOC_ID = 'inventory'
-
-// Table documents are keyed by their table number as a string ("7"), so the
-// customer route can read one document by ID instead of running a query.
-export const tableDocId = (tableNumber) => String(tableNumber)
-
-export const TABLE_STATUS = {
-  available: 'available',
-  pendingApproval: 'pending_approval',
-  occupied: 'occupied',
-}
-
-export const SESSION_STATUS = {
-  active: 'active',
-  billed: 'billed',
-  closed: 'closed',
-}
-
-export const ORDER_STATUS = {
-  pending: 'pending',
-  preparing: 'preparing',
-  ready: 'ready',
-}
+// Collection names are not centralised here any more. Every path is scoped
+// to a restaurant and built in src/data/firestoreAdapter.js, which is the
+// only module that talks to Firestore.

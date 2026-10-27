@@ -10,7 +10,7 @@
  * Currently: MOCK (design build).
  *
  * To restore Firebase, flip this one constant to false. The Firestore code is
- * untouched and still present in src/firebase.js and src/lib/actions.js.
+ * untouched and still present in src/firebase.js.
  *
  * Before flipping back, note that the design added four menu fields the
  * original schema lacked — category, description, diet, spice — so the menu

@@ -20,7 +20,13 @@
  * first run against real Firestore will need a pass for index errors and
  * timestamp handling.
  */
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { deleteApp, initializeApp } from 'firebase/app'
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth'
 import { isValidEmail, normaliseEmail } from '../lib/validate'
 import {
   addDoc,
@@ -41,7 +47,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { auth, db, firebaseConfig } from '../firebase'
 import { requireTenant } from '../tenant/current'
 import { DEFAULT_ROLE_PERMISSIONS } from '../auth/permissions'
 
@@ -123,7 +129,12 @@ export function subscribe(key, callback) {
     // Inactive staff are not returned at all: a leaver disappears from the
     // owner's list rather than lingering with a badge.
     const q = query(col('staff'), where('isActive', '==', true))
-    return onSnapshot(q, (snap) => callback(rows(snap)))
+    // The documents and the security rules say `isActive`; every screen says
+    // `active`. Translating at this seam keeps one name in the app and one
+    // in the database, instead of two names loose in both.
+    return onSnapshot(q, (snap) =>
+      callback(rows(snap).map((person) => ({ ...person, active: person.isActive !== false })))
+    )
   }
 
   if (key === 'tables') {
@@ -606,14 +617,57 @@ export async function resetAll() {
   throw new Error('Resetting is only available on demo data.')
 }
 
-export async function addStaff({ uid, name, email, role }) {
-  if (!uid) throw new Error('A staff record needs the Firebase Auth uid.')
-  await setDoc(doc(root(), 'staff', uid), {
-    name: String(name || '').trim(),
-    email: String(email || '').trim().toLowerCase(),
+/**
+ * Hire someone: create their sign-in, then record who they are here.
+ *
+ * The account is created through a throwaway second Firebase app. Using the
+ * main one would sign the owner out and sign the new starter in halfway
+ * through the form — the owner would be ejected from their own People
+ * screen. The second app is torn down as soon as the uid is in hand.
+ *
+ * This is why the platform needs no Cloud Function and stays on the free
+ * plan. The trade is that it runs in the browser, which is acceptable only
+ * because the security rules enforce owner-only writes independently.
+ */
+export async function addStaff({ name, role, email, password }) {
+  const trimmed = String(name || '').trim()
+  if (!trimmed) throw new Error('Name is required.')
+
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+  if (String(password ?? '').length < 8) {
+    throw new Error('Password must be at least 8 characters.')
+  }
+
+  const restaurantId = requireTenant()
+  const secondary = initializeApp(firebaseConfig, `staff-signup-${Date.now()}`)
+
+  let uid
+  try {
+    const credential = await createUserWithEmailAndPassword(
+      getAuth(secondary),
+      address,
+      String(password)
+    )
+    uid = credential.user.uid
+  } catch (error) {
+    if (error?.code === 'auth/email-already-in-use') {
+      throw new Error('That email address already has an account.')
+    }
+    if (error?.code === 'auth/weak-password') {
+      throw new Error('Password must be at least 8 characters.')
+    }
+    throw error
+  } finally {
+    await deleteApp(secondary).catch(() => {})
+  }
+
+  await setDoc(doc(db, 'restaurants', restaurantId, 'staff', uid), {
+    name: trimmed,
+    email: address,
     role: role || 'waiter',
     isActive: true,
-    restaurantId: requireTenant(),
+    restaurantId,
   })
   return uid
 }
@@ -623,13 +677,42 @@ export async function updateStaff(id, changes) {
   const snap = await getDoc(ref)
   if (!snap.exists()) throw new Error('That person no longer exists.')
 
+  const payload = { ...changes }
+
+  // Same translation as the read above, in the other direction. Without it
+  // the owner-protection check below would be looking at a field the screens
+  // never send, and would wave a deactivation straight through.
+  if ('active' in payload) {
+    payload.isActive = payload.active === true
+    delete payload.active
+  }
+
+  if ('password' in payload) {
+    if (payload.password) {
+      throw new Error(
+        'A password can only be set by the person themselves. Ask them to use ' +
+          'Forgot password on the sign-in page.'
+      )
+    }
+    delete payload.password
+  }
+
+  if (payload.email !== undefined) {
+    const address = normaliseEmail(payload.email)
+    if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+    // Note this changes the record, not the sign-in. Firebase Auth holds the
+    // address they actually log in with, and only they can change it.
+    payload.email = address
+  }
+
   if (snap.data().role === 'owner') {
-    if (changes.isActive === false) throw new Error('The owner cannot be switched off.')
-    if (changes.role && changes.role !== 'owner') {
+    if (payload.isActive === false) throw new Error('The owner cannot be switched off.')
+    if (payload.role && payload.role !== 'owner') {
       throw new Error('The owner’s role cannot be changed.')
     }
   }
-  await updateDoc(ref, changes)
+
+  await updateDoc(ref, payload)
 }
 
 /**
@@ -637,7 +720,7 @@ export async function updateStaff(id, changes) {
  * them, and an audit trail with holes is worse than none.
  */
 export async function removeStaff(id) {
-  await updateStaff(id, { isActive: false })
+  await updateStaff(id, { active: false })
 }
 
 export async function setRolePermission(role, permissionId, granted) {
