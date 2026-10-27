@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { signInWithPin, subscribe } from '../data'
+import { signInWithEmail, subscribe } from '../data'
 import { AuthContext } from './context'
 
 const STORAGE_KEY = 'service-session-v1'
@@ -36,8 +36,8 @@ export function AuthProvider({ children }) {
     return unsubscribe // STRICT UNMOUNT
   }, [])
 
-  const signIn = async (pin) => {
-    const person = await signInWithPin(pin)
+  const signIn = async (email, password) => {
+    const person = await signInWithEmail(email, password)
     setUser(person)
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(person))

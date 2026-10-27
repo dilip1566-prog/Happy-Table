@@ -5,7 +5,7 @@ import { useTableStatus } from '../../hooks/useTables'
 import { useMenu } from '../../hooks/useMenu'
 import { useInventory } from '../../hooks/useInventory'
 import { useMyOrders } from '../../hooks/useActiveOrders'
-import { CATEGORIES, RESTAURANT } from '../../mock/data'
+import { useCategories, useRestaurant } from '../../tenant/context'
 import { formatMoney } from '../../lib/format'
 import { Banner, Button, Sheet, Spinner, inputClass } from '../../components/ui'
 import DishCard from './DishCard'
@@ -21,12 +21,14 @@ import WaitingRoom from './WaitingRoom'
  *   tablet  two columns of dishes, wider gutters
  *   desktop three columns, capped at a readable measure and centred
  *
- * With 171 dishes across 19 sections, search is not a nicety — it is the
+ * On a long menu search is not a nicety — it is the
  * primary way anyone finds "samosa" without scrolling past six sections.
  */
 export default function CustomerView() {
   const { tableId } = useParams()
   const navigate = useNavigate()
+  const restaurant = useRestaurant()
+  const categories = useCategories()
 
   // No table in the URL means nobody has been seated yet: the menu is open to
   // read, but nothing can be sent to the kitchen until a code is entered.
@@ -39,7 +41,22 @@ export default function CustomerView() {
   const status = table?.status
   const { orders: myOrders } = useMyOrders(sessionId, tableId)
 
+  // Which person on the table this device is ordering as, when the party
+  // chose to pay separately. sessionStorage, not state: the redeem screen
+  // navigates to /customer/:table, which remounts this component.
+  const [tab, setTab] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('guest-tab-v1')
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  })
+
   const [cart, setCart] = useState({})
+  // One note for the whole order. Kept beside the cart so changing a
+  // quantity never disturbs what the guest has typed.
+  const [orderNote, setOrderNote] = useState('')
   const [cartOpen, setCartOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
@@ -100,15 +117,15 @@ export default function CustomerView() {
   }, [menu, query, searching])
 
   const grouped = useMemo(() => {
-    const map = new Map(CATEGORIES.map((c) => [c.id, []]))
+    const map = new Map(categories.map((c) => [c.id, []]))
     for (const item of menu) {
       if (!map.has(item.category)) map.set(item.category, [])
       map.get(item.category).push(item)
     }
-    return CATEGORIES.map((c) => ({ ...c, items: map.get(c.id) ?? [] })).filter(
+    return categories.map((c) => ({ ...c, items: map.get(c.id) ?? [] })).filter(
       (c) => c.items.length
     )
-  }, [menu])
+  }, [menu, categories])
 
   const lines = useMemo(
     () =>
@@ -137,6 +154,23 @@ export default function CustomerView() {
     })
   }
 
+  const setNote = (text) => setOrderNote(String(text ?? '').slice(0, 500))
+
+  /**
+   * Adding a dish from the menu opens the order.
+   *
+   * A guest who has just tapped Add wants to know it landed and what it has
+   * cost them so far, and they are one tap from sending it. The sheet
+   * answers both without them going looking for the cart bar. Reducing a
+   * quantity does not open it — that is a correction, not a decision point.
+   */
+  const addFromMenu = (id, qty) => {
+    if (browsing) return setCodeOpen(true)
+    const before = cart[id] ?? 0
+    setQty(id, qty)
+    if (qty > before) setCartOpen(true)
+  }
+
   const jumpTo = (id) => {
     setActiveCategory(id)
     document.getElementById(`cat-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -146,8 +180,17 @@ export default function CustomerView() {
     setSubmitting(true)
     setError(null)
     try {
-      await submitOrder({ sessionId, tableNumber: tableId, items: lines })
+      await submitOrder({
+        sessionId,
+        tableNumber: tableId,
+        items: lines,
+        note: orderNote,
+        // Null unless this device redeemed a personal code, in which case
+        // the order lands on that person's bill rather than the table's.
+        tabCode: tab?.table === Number(tableId) ? tab.code : null,
+      })
       setCart({})
+      setOrderNote('')
       setCartOpen(false)
       setConfirmation({ count, total })
       setTimeout(() => setConfirmation(null), 5000)
@@ -187,6 +230,7 @@ export default function CustomerView() {
   return (
     <div className="min-h-full pb-10">
       <Hero
+        restaurant={restaurant}
         table={table}
         browsing={browsing}
         placedCount={myOrders.length}
@@ -204,7 +248,7 @@ export default function CustomerView() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search 171 dishes, or type a number"
+              placeholder={`Search ${menu.length} dishes, or type a number`}
               aria-label="Search the menu"
               className="h-11 w-full rounded-control border border-line bg-surface pl-9 pr-9 text-[15px] text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent"
             />
@@ -287,7 +331,7 @@ export default function CustomerView() {
                     item={item}
                     qty={cart[item.id] ?? 0}
                     soldOut={isSoldOut(item.id)}
-                    onSetQty={(qty) => setQty(item.id, qty)}
+                    onSetQty={(qty) => addFromMenu(item.id, qty)}
                   />
                 ))}
               </div>
@@ -311,7 +355,7 @@ export default function CustomerView() {
                     item={item}
                     qty={cart[item.id] ?? 0}
                     soldOut={isSoldOut(item.id)}
-                    onSetQty={(qty) => setQty(item.id, qty)}
+                    onSetQty={(qty) => addFromMenu(item.id, qty)}
                   />
                 ))}
               </div>
@@ -352,7 +396,19 @@ export default function CustomerView() {
       {codeOpen && (
         <CodeSheet
           onClose={() => setCodeOpen(false)}
-          onFound={(table_number) => navigate(`/customer/${table_number}`)}
+          onFound={(match) => {
+            const next = match.tab_code
+              ? { code: match.tab_code, label: match.tab_label, table: match.table_number }
+              : null
+            setTab(next)
+            try {
+              if (next) sessionStorage.setItem('guest-tab-v1', JSON.stringify(next))
+              else sessionStorage.removeItem('guest-tab-v1')
+            } catch {
+              /* private mode — they just lose the split on a refresh */
+            }
+            navigate(`/customer/${match.table_number}`)
+          }}
         />
       )}
 
@@ -372,12 +428,15 @@ export default function CustomerView() {
 
       {cartOpen && (
         <CartSheet
+          payerLabel={tab?.table === Number(tableId) ? tab.label : null}
           partyName={table?.party_name ?? null}
           tableNumber={table?.table_number ?? null}
           lines={lines}
           total={total}
+          note={orderNote}
           submitting={submitting}
           onSetQty={setQty}
+          onSetNote={setNote}
           onClose={() => setCartOpen(false)}
           onSubmit={handleSubmit}
         />
@@ -386,16 +445,16 @@ export default function CustomerView() {
   )
 }
 
-function Hero({ table, browsing, placedCount, onViewOrders }) {
+function Hero({ restaurant, table, browsing, placedCount, onViewOrders }) {
   return (
     <header className="wash border-b border-line">
       <div className="mx-auto flex max-w-6xl items-end justify-between gap-4 px-4 py-7 sm:px-6 sm:py-9">
         <div>
           <h1 className="font-display text-[38px] leading-none sm:text-[46px]">
-            {RESTAURANT.name}
+            {restaurant.name}
           </h1>
           <p className="mt-1.5 text-[13px] uppercase tracking-[0.12em] text-ink-faint">
-            {RESTAURANT.tagline}
+            {restaurant.tagline}
           </p>
         </div>
         {/* Deliberately NOT called "view order" — the bottom bar already owns
@@ -482,7 +541,7 @@ function CodeSheet({ onClose, onFound }) {
           setError(null)
           // A breath so the name registers before the menu replaces it.
           setTimeout(() => {
-            if (!cancelled) onFound(match.table_number)
+            if (!cancelled) onFound(match)
           }, 650)
         } else {
           setFound(null)
@@ -502,7 +561,7 @@ function CodeSheet({ onClose, onFound }) {
     const entered = code.trim()
     if (entered.length < 2) return
 
-    if (found?.table_number) return onFound(found.table_number)
+    if (found?.table_number) return onFound(found)
 
     setError(`Code ${entered} is not open yet. Ask your server for the number.`)
     setCode('')

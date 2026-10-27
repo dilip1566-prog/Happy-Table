@@ -20,6 +20,8 @@
  * first run against real Firestore will need a pass for index errors and
  * timestamp handling.
  */
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { isValidEmail, normaliseEmail } from '../lib/validate'
 import {
   addDoc,
   arrayRemove,
@@ -39,7 +41,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { auth, db } from '../firebase'
 import { requireTenant } from '../tenant/current'
 import { DEFAULT_ROLE_PERMISSIONS } from '../auth/permissions'
 
@@ -64,6 +66,11 @@ const hydrate = (row) => ({
 // ---------------------------------------------------------------------------
 // Tenant lookup — the one query NOT scoped to a tenant
 // ---------------------------------------------------------------------------
+
+export async function listRestaurants() {
+  const snap = await getDocs(collection(db, 'restaurants'))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
 
 export async function lookupRestaurantBySlug(slug) {
   const q = query(
@@ -188,27 +195,77 @@ export async function suggestAccessCode() {
   throw new Error('No table codes left. Close a tab first.')
 }
 
+export async function suggestAccessCodes(count) {
+  const snap = await getDocs(query(col('sessions'), where('status', '==', 'active')))
+  const taken = new Set()
+  for (const session of rows(snap)) {
+    taken.add(String(session.access_code))
+    for (const tab of session.tabs ?? []) taken.add(String(tab.code))
+  }
+
+  const out = []
+  const free = []
+  for (let n = CODE_FLOOR; n <= CODE_CEILING; n += 1) {
+    if (!taken.has(String(n))) free.push(String(n))
+  }
+  while (out.length < count && free.length) {
+    out.push(free.splice(Math.floor(Math.random() * free.length), 1)[0])
+  }
+  for (let n = 100; n <= 999 && out.length < count; n += 1) {
+    if (!taken.has(String(n))) out.push(String(n))
+  }
+  if (out.length < count) throw new Error('Not enough table codes left. Close a tab first.')
+  return out
+}
+
 export async function findSessionByCode(code) {
-  const q = query(
-    col('sessions'),
-    where('status', '==', 'active'),
-    where('access_code', '==', String(code).trim()),
-    limit(1)
+  const wanted = String(code).trim()
+
+  // The table's own code is one indexed equality query. A payer code lives
+  // in an array of objects, which Firestore cannot match on a field, so
+  // `tab_codes` is kept beside `tabs` purely so array-contains can find it.
+  const byTable = await getDocs(
+    query(
+      col('sessions'),
+      where('status', '==', 'active'),
+      where('access_code', '==', wanted),
+      limit(1)
+    )
   )
-  const snap = await getDocs(q)
-  if (snap.empty) return null
-  const session = { id: snap.docs[0].id, ...snap.docs[0].data() }
+
+  let doc0 = byTable.docs[0] ?? null
+  let matchedTab = null
+
+  if (!doc0) {
+    const byTab = await getDocs(
+      query(
+        col('sessions'),
+        where('status', '==', 'active'),
+        where('tab_codes', 'array-contains', wanted),
+        limit(1)
+      )
+    )
+    doc0 = byTab.docs[0] ?? null
+    if (doc0) {
+      matchedTab = (doc0.data().tabs ?? []).find((t) => String(t.code) === wanted) ?? null
+    }
+  }
+
+  if (!doc0) return null
+  const session = { id: doc0.id, ...doc0.data() }
   return {
     session_id: session.session_id ?? session.id,
     party_name: session.party_name ?? null,
     table_number: (session.linked_tables ?? [])[0] ?? null,
     linked_tables: session.linked_tables ?? [],
+    tab_code: matchedTab ? String(matchedTab.code) : null,
+    tab_label: matchedTab ? matchedTab.label : null,
   }
 }
 
 export async function approveAndLinkTables(
   tableNumbers,
-  { covers, staff, partyName, accessCode } = {}
+  { covers, staff, partyName, accessCode, tabs } = {}
 ) {
   if (!tableNumbers?.length) throw new Error('Select at least one table to approve.')
 
@@ -220,6 +277,13 @@ export async function approveAndLinkTables(
     linked.map(async (n) => (await getDoc(rec('tables', n))).data()?.seats ?? 2)
   )
   const totalSeats = seats.reduce((sum, s) => sum + s, 0)
+
+  const cleanTabs = (tabs ?? [])
+    .filter((t) => t && String(t.code).trim())
+    .map((t, index) => ({
+      code: String(t.code).trim(),
+      label: String(t.label || '').trim() || `Guest ${index + 1}`,
+    }))
 
   const sessionRef = doc(col('sessions'))
   const sessionId = sessionRef.id
@@ -233,6 +297,9 @@ export async function approveAndLinkTables(
     covers: covers ?? totalSeats,
     party_name: String(partyName || '').trim() || null,
     access_code: code,
+    tabs: cleanTabs,
+    // Denormalised for array-contains; see findSessionByCode.
+    tab_codes: cleanTabs.map((t) => t.code),
     opened_by: staff ? { id: staff.id, name: staff.name, role: staff.role } : null,
   })
 
@@ -441,13 +508,15 @@ export async function setItemSoldOut(menuItemId, soldOut) {
 // Orders
 // ---------------------------------------------------------------------------
 
-export async function submitOrder({ sessionId, tableNumber, items }) {
+export async function submitOrder({ sessionId, tableNumber, items, note, tabCode }) {
   if (!sessionId) throw new Error('No active session.')
   if (!items?.length) throw new Error('Cart is empty.')
 
   const ref = await addDoc(col('orders'), {
     session_id: sessionId,
     ordered_by_table: Number(tableNumber),
+    tab_code: tabCode ? String(tabCode) : null,
+    note: String(note || '').trim().slice(0, 500) || null,
     items: items.map((item) => ({
       menu_item_id: item.id,
       name: item.name,
@@ -486,6 +555,56 @@ export async function fetchSessionsByStatus(status = 'active') {
 // Sign-in itself is Firebase Auth (see src/auth/AuthProvider). These manage
 // the staff records that carry role and isActive.
 // ---------------------------------------------------------------------------
+
+/**
+ * Sign in, then find out who that is here.
+ *
+ * Two steps on purpose. Firebase Auth proves the person owns the address;
+ * the staff document under this restaurant says whether they work here and
+ * in what role. An account with no document at this tenant is simply not
+ * staff of this restaurant, however valid their password — that is what
+ * stops one restaurant's manager signing into another's floor.
+ */
+export async function signInWithEmail(email, password) {
+  if (!auth) throw new Error('Firebase is not configured.')
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+
+  let credential
+  try {
+    credential = await signInWithEmailAndPassword(auth, address, String(password ?? ''))
+  } catch {
+    // Deliberately one message for every failure. Distinguishing "no such
+    // account" from "wrong password" tells a stranger which addresses are
+    // worth guessing at.
+    throw new Error('Email or password not recognised.')
+  }
+
+  const uid = credential.user.uid
+  const snap = await getDoc(doc(root(), 'staff', uid))
+  if (!snap.exists() || snap.data().isActive !== true) {
+    await signOut(auth)
+    throw new Error('Email or password not recognised.')
+  }
+
+  const data = snap.data()
+  return {
+    id: uid,
+    name: data.name,
+    email: data.email ?? address,
+    role: data.role,
+    active: true,
+  }
+}
+
+/**
+ * Demo-only. Re-seeding is a thing you do to a design build, never to a
+ * restaurant with real covers on the floor, so this refuses rather than
+ * quietly destroying a service.
+ */
+export async function resetAll() {
+  throw new Error('Resetting is only available on demo data.')
+}
 
 export async function addStaff({ uid, name, email, role }) {
   if (!uid) throw new Error('A staff record needs the Firebase Auth uid.')
@@ -549,5 +668,3 @@ export async function resetRolePermissions(role) {
   })
 }
 
-/** Mock-only; a real backend has nothing to reset to. */
-export const resetAll = undefined

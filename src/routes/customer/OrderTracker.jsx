@@ -50,10 +50,16 @@ export default function OrderTracker({ orders }) {
               {(order.items ?? []).map((line, index) => (
                 <li key={index} className="flex gap-2 text-[13px] text-ink-soft">
                   <span className="tabular font-semibold text-ink">{line.qty}&times;</span>
-                  {line.name}
+                  <span className="min-w-0">{line.name}</span>
                 </li>
               ))}
             </ul>
+
+            {order.note && (
+              <p className="mb-3 whitespace-pre-wrap rounded-card border border-line bg-sunken px-3 py-2 text-[12px] italic leading-relaxed text-accent">
+                {order.note}
+              </p>
+            )}
 
             <div className="flex gap-1.5">
               {STEPS.map((step, index) => (

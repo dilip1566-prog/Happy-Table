@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { addMenuItem } from '../../data'
 import { useMenu } from '../../hooks/useMenu'
 import { useInventory } from '../../hooks/useInventory'
-import { CATEGORIES } from '../../mock/data'
+import { useCategories } from '../../tenant/context'
 import { useAuth } from '../../auth/context'
 import { formatMoney } from '../../lib/format'
 import {
@@ -21,7 +21,7 @@ const BLANK = {
   name: '',
   description: '',
   price: '',
-  category: CATEGORIES[0].id,
+  category: '',
   diet: 'veg',
   nuts: false,
   isNew: true,
@@ -39,7 +39,12 @@ export default function ManagerMenu() {
   const { menu, loading } = useMenu()
   const { can } = useAuth()
   const { isSoldOut } = useInventory()
-  const [form, setForm] = useState(BLANK)
+  const categories = useCategories()
+  // The section list belongs to this restaurant, so the blank form cannot be
+  // a module constant — it has to pick up whatever this kitchen's first
+  // section happens to be.
+  const blank = () => ({ ...BLANK, category: categories[0]?.id ?? '' })
+  const [form, setForm] = useState(blank)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(null)
@@ -54,7 +59,7 @@ export default function ManagerMenu() {
     try {
       await addMenuItem(form)
       setSaved(form.name.trim())
-      setForm(BLANK)
+      setForm(blank())
       setTimeout(() => setSaved(null), 4000)
     } catch (err) {
       setError(err)
@@ -118,7 +123,7 @@ export default function ManagerMenu() {
               </Field>
               <Field label="Course">
                 <select value={form.category} onChange={set('category')} className={inputClass}>
-                  {CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>
@@ -201,7 +206,7 @@ export default function ManagerMenu() {
         <SectionTitle hint={`${menu.length} dishes`}>Current menu</SectionTitle>
 
         <div className="rail mb-4 flex gap-1.5 overflow-x-auto pb-1">
-          {[{ id: 'all', label: 'All' }, ...CATEGORIES].map((category) => (
+          {[{ id: 'all', label: 'All' }, ...categories].map((category) => (
             <button
               key={category.id}
               onClick={() => setFilter(category.id)}

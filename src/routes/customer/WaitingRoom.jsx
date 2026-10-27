@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RESTAURANT } from '../../mock/data'
+import { useRestaurant } from '../../tenant/context'
 import { USE_MOCK, approveAndLinkTables } from '../../data'
 
 /**
@@ -11,6 +11,7 @@ import { USE_MOCK, approveAndLinkTables } from '../../data'
  * "still waiting".
  */
 export default function WaitingRoom({ tableId, status, wasSeated }) {
+  const restaurant = useRestaurant()
   if (wasSeated) {
     return (
       <Shell>
@@ -34,7 +35,7 @@ export default function WaitingRoom({ tableId, status, wasSeated }) {
         {knocking ? 'Letting the team know' : 'Just a moment'}
       </span>
 
-      <p className="font-display text-[44px] leading-none">{RESTAURANT.name}</p>
+      <p className="font-display text-[44px] leading-none">{restaurant.name}</p>
 
       <h1 className="mt-5 text-[19px] font-semibold tracking-[-0.02em]">
         {knocking ? `Welcome to table ${tableId}` : 'Getting your table ready'}

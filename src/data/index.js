@@ -25,6 +25,7 @@ const backend = USE_MOCK ? mock : firestore
 
 // --- tenant (the only call not scoped to a restaurant) ----------------------
 export const lookupRestaurantBySlug = backend.lookupRestaurantBySlug
+export const listRestaurants = backend.listRestaurants
 
 // --- realtime (each returns an unsubscribe function) ------------------------
 export const subscribe = backend.subscribe
@@ -41,6 +42,7 @@ export const addTablesToSession = backend.addTablesToSession
 export const mergeSessions = backend.mergeSessions
 export const findSessionByCode = backend.findSessionByCode
 export const suggestAccessCode = backend.suggestAccessCode ?? (() => '')
+export const suggestAccessCodes = backend.suggestAccessCodes ?? (() => [])
 export const rejectTable = backend.rejectTable
 export const addMenuItem = backend.addMenuItem
 export const setItemSoldOut = backend.setItemSoldOut
@@ -51,7 +53,7 @@ export const markTableCleared = backend.markTableCleared
 export const freeTable = backend.freeTable
 
 // --- staff & access ---------------------------------------------------------
-export const signInWithPin = backend.signInWithPin
+export const signInWithEmail = backend.signInWithEmail
 export const addStaff = backend.addStaff
 export const updateStaff = backend.updateStaff
 export const removeStaff = backend.removeStaff

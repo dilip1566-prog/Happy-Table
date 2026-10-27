@@ -41,6 +41,10 @@ export function TenantProvider({ children, onRoot }) {
         // Set this BEFORE rendering children: the first hook to mount will
         // immediately start querying, and it must already know where to look.
         setActiveTenant(restaurant.id)
+        // The tab title is the one piece of chrome outside React's tree, so
+        // it has to be set by hand or every restaurant inherits the one
+        // baked into index.html.
+        document.title = `${restaurant.name} · Service`
         setState({
           status: restaurant.status === 'suspended' ? 'suspended' : 'ready',
           restaurant,

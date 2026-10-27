@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { setItemSoldOut } from '../../data'
 import { useMenu } from '../../hooks/useMenu'
 import { useInventory } from '../../hooks/useInventory'
-import { CATEGORIES } from '../../mock/data'
+import { useCategories } from '../../tenant/context'
 import { DishImage, DishMarks, Spinner, Switch } from '../../components/ui'
 import { useAuth } from '../../auth/context'
 
@@ -19,6 +19,7 @@ import { useAuth } from '../../auth/context'
 export default function InventoryPanel() {
   const { menu, loading } = useMenu()
   const { soldOutItems, isSoldOut } = useInventory()
+  const categories = useCategories()
   const canToggle = useAuth().can('inventory.toggle')
   const [busy, setBusy] = useState(null)
   const [filter, setFilter] = useState('all')
@@ -69,7 +70,7 @@ export default function InventoryPanel() {
       </div>
 
       <div className="rail mb-4 flex gap-1.5 overflow-x-auto pb-1">
-        {[{ id: 'all', label: 'All' }, ...CATEGORIES].map((category) => (
+        {[{ id: 'all', label: 'All' }, ...categories].map((category) => (
           <button
             key={category.id}
             onClick={() => setFilter(category.id)}
@@ -113,7 +114,7 @@ export default function InventoryPanel() {
                   </p>
                 </div>
                 <p className="mt-0.5 text-[12px] uppercase tracking-[0.06em] text-kds-ink-soft">
-                  {CATEGORIES.find((c) => c.id === item.category)?.label ?? item.category}
+                  {categories.find((c) => c.id === item.category)?.label ?? item.category}
                 </p>
               </div>
 

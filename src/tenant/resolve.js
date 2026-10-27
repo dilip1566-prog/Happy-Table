@@ -3,12 +3,12 @@
  *
  * Answered from the hostname, so the same deployment serves every tenant:
  *
- *   bobbys.happy.co.uk        -> "bobbys"
- *   royalsweetmart.happy.co.uk-> "royalsweetmart"
- *   happy.co.uk               -> null  (the root: our own admin console)
- *   www.happy.co.uk           -> null
- *   bobbys.localhost:5180     -> "bobbys"   (works in dev, no DNS needed)
- *   localhost:5180            -> null
+ *   bobbys.happtable.co.uk      -> "bobbys"
+ *   starvashnu.happtable.co.uk  -> "starvashnu"
+ *   happtable.co.uk             -> null  (the root: our own admin console)
+ *   www.happtable.co.uk         -> null
+ *   bobbys.localhost:5180       -> "bobbys"   (works in dev, no DNS needed)
+ *   localhost:5180              -> null
  *
  * Nothing here is hard-coded per restaurant. A new tenant is a row in
  * Firestore and a DNS wildcard that already exists — no deploy, no code.
@@ -21,7 +21,7 @@ const RESERVED = new Set(['www', 'app', 'admin', 'api', 'staging', 'preview'])
  * Apex domains we serve from. Anything to the left of one of these is a
  * tenant slug. Add a domain here and it starts resolving tenants.
  */
-const APEX_DOMAINS = ['happy.co.uk', 'localhost']
+const APEX_DOMAINS = ['happtable.co.uk', 'localhost']
 
 export function slugFromHost(host = '') {
   // Strip the port and lower-case: "Bobbys.localhost:5180" -> "bobbys.localhost"
@@ -54,8 +54,17 @@ export function slugFromHost(host = '') {
  */
 export function currentSlug(location = window.location) {
   if (import.meta.env.DEV) {
-    const override = new URLSearchParams(location.search).get('tenant')
-    if (override) return override.toLowerCase()
+    const params = new URLSearchParams(location.search)
+    if (params.has('tenant')) {
+      const override = (params.get('tenant') || '').toLowerCase()
+      // Remember it immediately. Without this the override lasts exactly one
+      // page load: the first link or refresh drops back to the hostname,
+      // which on plain localhost is the root — so a waiter and a guest could
+      // silently end up on two different restaurants, and a perfectly good
+      // table code would be reported as unknown.
+      rememberOverride(override)
+      if (override) return override
+    }
     try {
       const remembered = sessionStorage.getItem('tenant-override')
       if (remembered) return remembered.toLowerCase()

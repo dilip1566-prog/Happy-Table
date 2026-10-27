@@ -17,3 +17,15 @@ export function useTenant() {
 export function useRestaurant() {
   return useTenant().restaurant
 }
+
+/**
+ * This restaurant's menu sections, in its own order.
+ *
+ * They ride on the restaurant record rather than a collection of their own:
+ * nothing can render until that record has loaded anyway, so putting them
+ * here costs no extra read. Never import a CATEGORIES constant into a
+ * component — that is one restaurant's list being shown to all of them.
+ */
+export function useCategories() {
+  return useTenant().restaurant?.categories ?? []
+}

@@ -4,8 +4,6 @@ import { countItems, elapsedClock, ticketUrgency } from '../../lib/format'
 import { Empty, Spinner } from '../../components/ui'
 import { useAuth } from '../../auth/context'
 
-const PREP_PRESETS = [10, 15, 20, 30]
-
 /**
  * The ticket rail.
  *
@@ -128,7 +126,7 @@ function Ticket({ order, busy, onAdvance, canFire, canReady }) {
             isNew ? 'bg-state-new/15 text-state-new' : 'bg-state-fire/15 text-state-fire'
           }`}
         >
-          {isNew ? 'New' : `On · ${order.prep_time_minutes}m`}
+          {isNew ? 'New' : 'On'}
         </span>
       </div>
 
@@ -138,10 +136,26 @@ function Ticket({ order, busy, onAdvance, canFire, canReady }) {
             <span className="tabular grid size-7 shrink-0 place-items-center rounded-[6px] bg-kds-raised text-[14px] font-bold">
               {line.qty}
             </span>
-            <span className="text-[16px] font-medium leading-snug">{line.name}</span>
+            <span className="min-w-0 flex-1 text-[16px] font-medium leading-snug">
+              {line.name}
+            </span>
           </li>
         ))}
       </ul>
+
+      {order.note && (
+        // Loud on purpose, and inside the ticket's border so it cannot be
+        // mistaken for belonging to the ticket below. A note read too late
+        // is a dish remade.
+        <div className="border-t border-kds-line bg-state-new/10 px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-state-new">
+            &#9888; Special requirements
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-[16px] font-semibold leading-snug text-state-new">
+            {order.note}
+          </p>
+        </div>
+      )}
 
       <div className="border-t border-kds-line p-3">
         {isNew ? (
@@ -160,23 +174,13 @@ function Ticket({ order, busy, onAdvance, canFire, canReady }) {
               <p className="py-3 text-center text-[12px] text-kds-ink-soft">View only</p>
             )
           ) : (
-          <>
-            <p className="mb-2 px-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-kds-ink-soft">
-              Fire &amp; quote
-            </p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {PREP_PRESETS.map((minutes) => (
-                <button
-                  key={minutes}
-                  disabled={busy}
-                  onClick={() => onAdvance(order, 'preparing', minutes)}
-                  className="tabular h-14 rounded-control bg-state-fire text-[15px] font-bold text-white transition-transform active:scale-95 disabled:opacity-40"
-                >
-                  {minutes}m
-                </button>
-              ))}
-            </div>
-          </>
+          <button
+            disabled={busy}
+            onClick={() => onAdvance(order, 'preparing', null)}
+            className="h-14 w-full rounded-control bg-state-fire text-[15px] font-bold text-white transition-transform active:scale-95 disabled:opacity-40"
+          >
+            {busy ? '…' : 'Fire'}
+          </button>
           )
         ) : !canReady ? (
           <p className="py-3 text-center text-[12px] text-kds-ink-soft">View only</p>

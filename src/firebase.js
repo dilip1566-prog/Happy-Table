@@ -2,6 +2,7 @@
 // app never initialises more than one Firestore instance (extra instances =
 // extra websocket channels = wasted free-tier reads).
 import { initializeApp } from 'firebase/app'
+import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
@@ -21,6 +22,7 @@ export const isConfigured = Boolean(firebaseConfig.projectId)
 
 export const app = isConfigured ? initializeApp(firebaseConfig) : null
 export const db = app ? getFirestore(app) : null
+export const auth = app ? getAuth(app) : null
 
 if (!isConfigured && import.meta.env.DEV) {
   console.info(

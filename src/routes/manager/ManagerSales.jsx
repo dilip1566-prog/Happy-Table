@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { subscribe } from '../../data'
-import { CATEGORIES } from '../../mock/data'
 import { formatMoney, orderTotal } from '../../lib/format'
 import { Card, SectionTitle, Spinner, Stat } from '../../components/ui'
 

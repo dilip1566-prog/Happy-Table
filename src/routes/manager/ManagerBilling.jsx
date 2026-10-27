@@ -75,6 +75,35 @@ export default function ManagerBilling() {
   }
 
   const grand = orders.reduce((sum, order) => sum + orderTotal(order), 0)
+
+  /**
+   * One row per person when the party chose to pay separately.
+   *
+   * Anything ordered on the table's own code has no payer, so it collects
+   * under "the table" rather than being quietly assigned to whoever is
+   * first in the list — a split bill that guesses is worse than one that
+   * admits what it does not know.
+   */
+  const split = (() => {
+    const tabs = active?.tabs ?? []
+    if (!tabs.length) return null
+
+    const byCode = new Map(tabs.map((t) => [String(t.code), { ...t, total: 0, count: 0 }]))
+    let shared = 0
+    let sharedCount = 0
+
+    for (const order of orders) {
+      const row = order.tab_code ? byCode.get(String(order.tab_code)) : null
+      if (row) {
+        row.total += orderTotal(order)
+        row.count += 1
+      } else {
+        shared += orderTotal(order)
+        sharedCount += 1
+      }
+    }
+    return { rows: [...byCode.values()], shared, sharedCount }
+  })()
   const label = (s) => (s?.linked_tables ?? []).join(' + ')
 
   return (
@@ -173,6 +202,16 @@ export default function ManagerBilling() {
                     <div className="mb-2.5 flex items-center justify-between">
                       <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
                         Table {order.ordered_by_table} &middot; {formatTime(order.created_at)}
+                        {order.tab_code && (
+                          <>
+                            {' '}&middot;{' '}
+                            <span className="text-accent">
+                              {(active?.tabs ?? []).find(
+                                (t) => String(t.code) === String(order.tab_code)
+                              )?.label ?? `Code ${order.tab_code}`}
+                            </span>
+                          </>
+                        )}
                       </span>
                       <Status value={order.status} />
                     </div>
@@ -189,8 +228,39 @@ export default function ManagerBilling() {
                         </li>
                       ))}
                     </ul>
+
+                    {order.note && (
+                      <p className="mt-2 whitespace-pre-wrap border-l-2 border-accent/40 pl-3 text-[12px] italic leading-relaxed text-ink-faint">
+                        {order.note}
+                      </p>
+                    )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {split && (
+              <div className="border-t border-line px-4 py-4 sm:px-6 sm:py-5">
+                <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+                  Paying separately
+                </p>
+                <div className="space-y-1">
+                  {split.rows.map((row) => (
+                    <Row
+                      key={row.code}
+                      label={`${row.label} · code ${row.code}`}
+                      value={formatMoney(row.total)}
+                    />
+                  ))}
+                  {split.sharedCount > 0 && (
+                    <Row
+                      label={`On the table code · ${split.sharedCount} order${
+                        split.sharedCount === 1 ? '' : 's'
+                      }`}
+                      value={formatMoney(split.shared)}
+                    />
+                  )}
+                </div>
               </div>
             )}
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   addTablesToSession,
   approveAndLinkTables,
@@ -7,6 +7,7 @@ import {
   mergeSessions,
   rejectTable,
   suggestAccessCode,
+  suggestAccessCodes,
 } from '../../data'
 import { useTables } from '../../hooks/useTables'
 import { useSessions } from '../../hooks/useSessions'
@@ -21,6 +22,7 @@ import {
   Sheet,
   Spinner,
   Stat,
+  Stepper,
   inputClass,
 } from '../../components/ui'
 
@@ -66,7 +68,7 @@ export default function ManagerDashboard() {
    * original path — a brand new party. With one, the tables land on a session
    * that may already have food on the way.
    */
-  const seat = async (partyName, joinSessionId, accessCode) => {
+  const seat = async (partyName, joinSessionId, accessCode, tabs) => {
     setBusy(true)
     setError(null)
     const list = [...selected].sort((a, b) => a - b)
@@ -80,10 +82,20 @@ export default function ManagerDashboard() {
           } — one bill`
         )
       } else {
-        await approveAndLinkTables(selected, { staff: user, partyName, accessCode })
+        await approveAndLinkTables(selected, {
+          staff: user,
+          partyName,
+          accessCode,
+          tabs,
+        })
         // The code is the whole point of the new flow, so it gets its own
         // card rather than a banner that scrolls away before it is read out.
-        setIssued({ code: accessCode, tables: list, partyName: partyName?.trim() || null })
+        setIssued({
+          code: accessCode,
+          tabs: tabs ?? [],
+          tables: list,
+          partyName: partyName?.trim() || null,
+        })
       }
       setSelected([])
       setSeating(false)
@@ -356,6 +368,10 @@ function TableTile({ table, session, selected, canSeat, onSelect, onOpen, onDism
 function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
   const [name, setName] = useState('')
   const [joinId, setJoinId] = useState(null)
+  // 'together' is the overwhelmingly common answer, so it is the default and
+  // the question stays one quiet row rather than a step of its own.
+  const [paying, setPaying] = useState('together')
+  const [payers, setPayers] = useState(2)
   // Suggested once per dialog so it does not change under the staff member
   // while they are typing the party name.
   const [code, setCode] = useState(() => {
@@ -365,6 +381,23 @@ function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
       return ''
     }
   })
+
+  // Drawn once per choice rather than per render, or the numbers the waiter
+  // is reading out would reshuffle under them mid-sentence.
+  const [splitCodes, setSplitCodes] = useState([])
+  useEffect(() => {
+    if (paying !== 'separate') return setSplitCodes([])
+    try {
+      setSplitCodes(suggestAccessCodes(payers))
+    } catch {
+      setSplitCodes([])
+    }
+  }, [paying, payers])
+
+  const tabs =
+    paying === 'separate'
+      ? splitCodes.map((c, i) => ({ code: c, label: `Guest ${i + 1}` }))
+      : []
 
   const open = sessions ?? []
   const joined = open.find((s) => s.session_id === joinId) ?? null
@@ -381,8 +414,13 @@ function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
         <Button
           full
           size="xl"
-          disabled={busy || (!joinId && code.trim().length < 2)}
-          onClick={() => onSeat(name, joinId, code)}
+          disabled={
+            busy ||
+            (!joinId &&
+              (code.trim().length < 2 ||
+                (paying === 'separate' && splitCodes.length < payers)))
+          }
+          onClick={() => onSeat(name, joinId, code, tabs)}
         >
           {busy ? 'Seating…' : joined ? `Add to ${label(joined)}` : 'Seat guests'}
         </Button>
@@ -424,7 +462,7 @@ function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            onSeat(name, null)
+            onSeat(name, null, code, tabs)
           }}
         >
           <Field
@@ -454,6 +492,59 @@ function SeatPartyDialog({ tables, sessions, busy, onCancel, onSeat }) {
                 className={`${inputClass} tabular text-center text-[22px] font-bold tracking-[0.25em]`}
               />
             </Field>
+          </div>
+
+          <div className="mt-5">
+            <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+              The bill
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPaying('together')}
+                className={`flex-1 rounded-control border py-2.5 text-[13px] font-semibold transition-colors ${
+                  paying === 'together'
+                    ? 'border-accent bg-accent-wash text-ink'
+                    : 'border-line-strong bg-surface text-ink-faint'
+                }`}
+              >
+                One bill
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaying('separate')}
+                className={`flex-1 rounded-control border py-2.5 text-[13px] font-semibold transition-colors ${
+                  paying === 'separate'
+                    ? 'border-accent bg-accent-wash text-ink'
+                    : 'border-line-strong bg-surface text-ink-faint'
+                }`}
+              >
+                Separate bills
+              </button>
+            </div>
+
+            {paying === 'separate' && (
+              <div className="rise mt-3">
+                <Field label="How many are paying?">
+                  <Stepper value={payers} onChange={setPayers} min={2} />
+                </Field>
+
+                <ul className="mt-3 space-y-1.5 rounded-card border border-line bg-sunken p-3">
+                  {splitCodes.map((c, index) => (
+                    <li key={c} className="flex items-baseline justify-between text-[13px]">
+                      <span className="text-ink-faint">Guest {index + 1}</span>
+                      <span className="tabular text-[18px] font-bold text-accent">{c}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="mt-2 text-[12px] leading-relaxed text-ink-faint">
+                  Each person keys in their own number and pays for what they
+                  ordered. Table code {code} still opens the menu and bills the
+                  table.
+                </p>
+              </div>
+            )}
           </div>
         </form>
       ) : (
@@ -650,7 +741,7 @@ function Row({ label, value }) {
  * carry from their screen to the guest, so it gets a screen of its own rather
  * than a toast that disappears while they are still walking over.
  */
-function CodeHandoverCard({ code, tables, partyName, onClose }) {
+function CodeHandoverCard({ code, tables, partyName, tabs = [], onClose }) {
   return (
     <Sheet title="Tell the table" onClose={onClose} width="max-w-sm">
       <div className="text-center">
@@ -673,6 +764,24 @@ function CodeHandoverCard({ code, tables, partyName, onClose }) {
           Ask them to go to the menu page and enter <strong className="text-ink">{code}</strong>.
           Their menu opens straight away — no waiting for approval.
         </p>
+
+        {tabs.length > 0 && (
+          <div className="mt-6 rounded-card border border-line bg-sunken p-4 text-left">
+            <p className="mb-2.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+              Paying separately &mdash; one number each
+            </p>
+            <ul className="space-y-1.5">
+              {tabs.map((tab) => (
+                <li key={tab.code} className="flex items-baseline justify-between">
+                  <span className="text-[13px] text-ink-soft">{tab.label}</span>
+                  <span className="tabular text-[22px] font-bold text-accent">
+                    {tab.code}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <Button full size="xl" className="mt-7" onClick={onClose}>

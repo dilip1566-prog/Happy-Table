@@ -17,7 +17,7 @@ import KitchenView from './routes/kitchen/KitchenView'
 /**
  * One deployment, many restaurants.
  *
- * The hostname decides which. `bobbys.happy.co.uk` resolves to a restaurant
+ * The hostname decides which. `bobbys.happtable.co.uk` resolves to a restaurant
  * and renders the app below; the bare apex renders our own admin console
  * instead. TenantProvider sits above everything so no query can run before
  * it is known which restaurant's data to read.

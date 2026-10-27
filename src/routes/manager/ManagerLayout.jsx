@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { RESTAURANT } from '../../mock/data'
+import { useRestaurant } from '../../tenant/context'
 import { useTables } from '../../hooks/useTables'
 import { useAuth } from '../../auth/context'
 import { roleLabel } from '../../auth/permissions'
@@ -20,6 +20,7 @@ const TABS = [
 ]
 
 export default function ManagerLayout() {
+  const restaurant = useRestaurant()
   const { pending } = useTables()
   const { user, signOut, can } = useAuth()
   const navigate = useNavigate()
@@ -36,7 +37,7 @@ export default function ManagerLayout() {
       <header className="sticky top-0 z-40 border-b border-line bg-canvas/92 backdrop-blur-lg">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 sm:px-6 sm:py-3.5">
           <div className="flex items-baseline gap-2.5">
-            <span className="font-display text-[22px] leading-none">{RESTAURANT.name}</span>
+            <span className="font-display text-[22px] leading-none">{restaurant.name}</span>
             <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
               Front of house
             </span>

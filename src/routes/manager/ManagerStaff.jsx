@@ -266,7 +266,7 @@ function StackedMatrix({ access, busy, onToggle }) {
 // People
 // ---------------------------------------------------------------------------
 
-const BLANK = { name: '', role: 'waiter', pin: '' }
+const BLANK = { name: '', role: 'waiter', email: '', password: '' }
 
 function People({ staff, currentUserId, onError }) {
   const [form, setForm] = useState(BLANK)
@@ -288,7 +288,7 @@ function People({ staff, currentUserId, onError }) {
   return (
     <section className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,340px)_1fr]">
       <div>
-        <SectionTitle hint="A four-digit PIN, used to sign in on any device">
+        <SectionTitle hint="They sign in with this email address">
           Add someone
         </SectionTitle>
         <Card className="p-5">
@@ -317,18 +317,30 @@ function People({ staff, currentUserId, onError }) {
               </select>
             </Field>
 
-            <Field label="PIN" hint="Four digits, unique to this person">
+            <Field label="Email" hint="Must be a working address — it is their sign-in">
               <input
                 required
-                inputMode="numeric"
-                pattern="\d{4}"
-                maxLength={4}
-                value={form.pin}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))
-                }
-                placeholder="••••"
-                className={`${inputClass} tabular tracking-[0.3em]`}
+                type="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck="false"
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="priya@restaurant.co.uk"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Password" hint="At least 8 characters">
+              <input
+                required
+                type="password"
+                minLength={8}
+                autoComplete="new-password"
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="••••••••"
+                className={inputClass}
               />
             </Field>
 
@@ -361,19 +373,25 @@ function People({ staff, currentUserId, onError }) {
 /**
  * One person, readable at a glance and editable in place.
  *
- * PIN changes happen here rather than in a separate screen because the two
- * questions — "who is this" and "what is their code" — are always asked
+ * Address changes happen here rather than in a separate screen because the
+ * two questions — "who is this" and "how do they get in" — are always asked
  * together, usually while the person is standing next to you.
  */
 function PersonCard({ person, isMe, onError }) {
   const isOwner = person.role === 'owner'
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState({ name: person.name, role: person.role, pin: person.pin })
+  const [draft, setDraft] = useState({
+    name: person.name,
+    role: person.role,
+    email: person.email,
+    password: '',
+  })
   const [saving, setSaving] = useState(false)
-  const [revealed, setRevealed] = useState(false)
 
   const open = () => {
-    setDraft({ name: person.name, role: person.role, pin: person.pin })
+    // Password starts empty and an empty box means "leave it alone" — the
+    // store never sees a blank password as an instruction to clear one.
+    setDraft({ name: person.name, role: person.role, email: person.email, password: '' })
     setEditing(true)
   }
 
@@ -419,19 +437,31 @@ function PersonCard({ person, isMe, onError }) {
               </select>
             </Field>
 
-            <Field label="PIN">
+            <Field label="Email">
               <input
                 required
-                inputMode="numeric"
-                maxLength={4}
-                value={draft.pin}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))
-                }
-                className={`${inputClass} tabular tracking-[0.3em]`}
+                type="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck="false"
+                value={draft.email}
+                onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))}
+                className={inputClass}
               />
             </Field>
           </div>
+
+          <Field label="New password" hint="Leave blank to keep the current one">
+            <input
+              type="password"
+              minLength={8}
+              autoComplete="new-password"
+              value={draft.password}
+              onChange={(e) => setDraft((d) => ({ ...d, password: e.target.value }))}
+              placeholder="••••••••"
+              className={inputClass}
+            />
+          </Field>
 
           <div className="flex gap-2 pt-1">
             <Button type="button" variant="quiet" onClick={() => setEditing(false)}>
@@ -466,19 +496,12 @@ function PersonCard({ person, isMe, onError }) {
             </span>
           )}
         </p>
-        <p className="flex items-center gap-2 text-[12px] text-ink-faint">
+        <p className="flex items-center gap-2 truncate text-[12px] text-ink-faint">
           {roleLabel(person.role)}
           <span>&middot;</span>
-          {/* A PIN on a screen in a dining room is a PIN anyone walking past
-              can read, so it stays masked until asked for. */}
-          <button
-            type="button"
-            onClick={() => setRevealed((v) => !v)}
-            className="tabular font-semibold tracking-[0.15em] text-ink-soft hover:text-ink"
-            aria-label={revealed ? 'Hide PIN' : 'Show PIN'}
-          >
-            {revealed ? person.pin : '••••'}
-          </button>
+          {/* The address is not a secret — it is on their payslip. The
+              password is never rendered anywhere. */}
+          <span className="truncate text-ink-soft">{person.email}</span>
         </p>
       </div>
 

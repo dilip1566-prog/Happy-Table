@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { USE_MOCK } from '../../data'
+import { useEffect, useState } from 'react'
+import { USE_MOCK, listRestaurants } from '../../data'
 import { tenantUrl, rememberOverride } from '../../tenant/resolve'
 import { Banner, Button, Card, Field, SectionTitle, inputClass } from '../../components/ui'
 
@@ -21,6 +21,19 @@ export default function SuperAdmin() {
   const [restaurants, setRestaurants] = useState([])
   const [form, setForm] = useState({ name: '', subdomain: '', ownerEmail: '', tables: 20 })
   const [notice, setNotice] = useState(null)
+
+  // The platform's real roster. Showing an empty console while two
+  // restaurants are live is worse than useless — it is how you end up
+  // opening the wrong one and wondering why a table code is rejected.
+  useEffect(() => {
+    let cancelled = false
+    listRestaurants()
+      .then((rows) => !cancelled && setRestaurants(rows))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const set = (field) => (event) =>
     setForm((f) => ({ ...f, [field]: event.target.value }))
@@ -100,7 +113,7 @@ export default function SuperAdmin() {
 
               <Field
                 label="Subdomain"
-                hint={`Guests will use ${slugify(form.subdomain || form.name) || 'name'}.happy.co.uk`}
+                hint={`Guests will use ${slugify(form.subdomain || form.name) || 'name'}.happtable.co.uk`}
               >
                 <input
                   value={form.subdomain}
@@ -185,10 +198,12 @@ export default function SuperAdmin() {
                     </span>
                   </div>
                   <p className="mt-1 truncate text-[12px] text-ink-faint">
-                    {r.subdomain}.happy.co.uk
+                    {r.subdomain}.happtable.co.uk
                   </p>
                   <p className="tabular mt-0.5 text-[12px] text-ink-faint">
-                    {r.tables} tables &middot; {r.ownerEmail}
+                    {r.tables} tables
+                    {r.dishes ? ` · ${r.dishes} dishes` : ''}
+                    {r.ownerEmail ? ` · ${r.ownerEmail}` : ''}
                   </p>
                   <Button
                     variant="secondary"

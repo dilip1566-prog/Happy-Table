@@ -260,19 +260,279 @@ export const SEED_SOLD_OUT = ['m011', 'm127']
 /**
  * Demo staff.
  *
- * PIN rather than email + password on purpose: this is a shared tablet at a
- * pass, operated with wet hands mid-service. Every real restaurant system
- * lands on a short code for the same reason.
+ * Email and password, so a leaver is revoked by switching one account off
+ * rather than by changing a code every colleague has memorised.
  *
  * These are demo values for the design build only. Replace them — and move
  * verification server-side — before this touches a real till.
  */
 export function seedStaff() {
   return [
-    { id: 'u_owner', name: 'Bobby', role: 'owner', pin: '1111', active: true },
-    { id: 'u_mgr', name: 'Dimple', role: 'manager', pin: '2222', active: true },
-    { id: 'u_waiter1', name: 'Rishi', role: 'waiter', pin: '3333', active: true },
-    { id: 'u_waiter2', name: 'Priya', role: 'waiter', pin: '5555', active: true },
-    { id: 'u_kitchen', name: 'Kitchen', role: 'kitchen', pin: '4444', active: true },
+    { id: 'u_owner', name: 'Bobby', role: 'owner', email: 'bobby@bobbys.co.uk', password: 'demo1234', active: true },
+    { id: 'u_mgr', name: 'Dimple', role: 'manager', email: 'dimple@bobbys.co.uk', password: 'demo1234', active: true },
+    { id: 'u_waiter1', name: 'Rishi', role: 'waiter', email: 'rishi@bobbys.co.uk', password: 'demo1234', active: true },
+    { id: 'u_waiter2', name: 'Priya', role: 'waiter', email: 'priya@bobbys.co.uk', password: 'demo1234', active: true },
+    { id: 'u_kitchen', name: 'Kitchen', role: 'kitchen', email: 'kitchen@bobbys.co.uk', password: 'demo1234', active: true },
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Second tenant - Star Vashnu Dhaba
+//
+// 163 dishes across 15 sections, generated from Star_Vashnu_Dhaba_Menu.xlsx.
+// 94 Narborough Road, Leicester LE3 0BS. Numbering restarts at 1 because
+// dish numbers are per restaurant, and these match the restaurant's own
+// printed list so a guest and a waiter can say the same number.
+//
+// The kitchen is 100% pure vegetarian. The source sheet carries NO allergen
+// column, so `diet` is 'veg' and `nuts` is false throughout as a placeholder
+// - neither was supplied and neither is inferred. The owner must confirm
+// which dishes are vegan and which contain nuts before this menu faces a
+// guest.
+//
+// Items with more than one price carry a `sizes` array; `price` is the
+// smallest size so every existing surface keeps working unchanged. The dish
+// card does not offer the larger sizes yet.
+// ---------------------------------------------------------------------------
+
+export const STAR_CATEGORIES = [
+  { id: 'italian', label: 'Italian' },
+  { id: 'italian-pizzas', label: 'Italian Pizzas' },
+  { id: 'family-pizza-deal', label: 'Family Pizza Deal' },
+  { id: 'indo-chinese', label: 'Indo-Chinese' },
+  { id: 'drinks', label: 'Drinks' },
+  { id: 'south-indian', label: 'South Indian' },
+  { id: 'indian-starters', label: 'Indian Starters' },
+  { id: 'indian-parotha', label: 'Indian Parotha' },
+  { id: 'side-orders', label: 'Side Orders' },
+  { id: 'salad', label: 'Salad' },
+  { id: 'indian-mains', label: 'Indian Mains' },
+  { id: 'thali', label: 'Thali' },
+  { id: 'sweets-desserts', label: 'Sweets / Desserts' },
+  { id: 'mexican', label: 'Mexican' },
+  { id: 'snacks', label: 'Snacks' },
+]
+
+export const STAR_MENU = [
+  { id: 's001', no: 1, name: 'Garlic Mushrooms (8 pcs)', description: 'Garlic breaded mushrooms.', price: 3.5, category: 'italian', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's002', no: 2, name: 'Garlic Bread (4 pcs)', description: 'Toasted bread with garlic butter and herbs.', price: 2.5, category: 'italian', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/002.jpg' },
+  { id: 's003', no: 3, name: 'Garlic Bread with Cheese (4 pcs)', description: 'Garlic bread topped with melted cheese.', price: 3.5, category: 'italian', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's004', no: 4, name: 'Garlic Bread Special (4 pcs)', description: 'Garlic bread with sauce, cheese & chillies.', price: 4.0, category: 'italian', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's005', no: 5, name: 'Vegetable Lasagne', description: 'Layers of vegetables and pasta topped with cheese, served with garlic bread.', price: 6.0, category: 'italian', section: 'Main', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's006', no: 6, name: 'Kheema Lasagne', description: 'Layers of mixed soya vegetables and pasta with cheese topping, served with garlic bread.', price: 6.5, category: 'italian', section: 'Main', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's007', no: 7, name: 'Pasta Formo', description: 'Baked pasta in a rich tomato sauce with vegetables and cheese.', price: 5.0, category: 'italian', section: 'Main', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's008', no: 8, name: 'Margherita', description: 'Cheese & tomato.', price: 4.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 4.0 }, { label: '12"', price: 10.0 }, { label: '16"', price: 13.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's009', no: 9, name: 'Vegetarian', description: 'Cheese, tomato, mixed peppers, mushrooms, sweetcorn, onions & tomato slices.', price: 4.5, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 4.5 }, { label: '12"', price: 12.0 }, { label: '16"', price: 14.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's010', no: 10, name: 'Vegetarian Supreme', description: 'Cheese, tomato, sweetcorn, green chillies, onion, mixed pepper, mushrooms, jalapeno & tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's011', no: 11, name: 'Paneer Special', description: 'Cheese, tomato, sweetcorn, mixed peppers, onions & slices of paneer.', price: 6.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 6.0 }, { label: '12"', price: 13.0 }, { label: '16"', price: 17.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's012', no: 12, name: 'Paneer Keema', description: 'Cheese, tomato, dried paneer, onions, peppers & tomato slices.', price: 6.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 6.0 }, { label: '12"', price: 13.0 }, { label: '16"', price: 17.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's013', no: 13, name: 'Star Special (Hot & Spicy)', description: 'Cheese, tomato, mixed peppers, onions, green chillies and special sauce.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's014', no: 14, name: 'Star Delux', description: 'Cheese, tomato, Indian spicy mixed vegetables, peppers & tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's015', no: 15, name: 'Italian Special', description: 'Cheese, tomato, mixed peppers, sweetcorn, pineapple, mushroom, olives & tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 16.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's016', no: 16, name: 'Spinach', description: 'Cheese, tomato, spinach, red onion, green peppers & tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's017', no: 17, name: 'Mexican', description: 'Cheese, tomato, Mexican beans, jalapeno, green peppers and tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's018', no: 18, name: 'Pasta Pizza', description: 'Cheese, tomato, spicy pasta, mixed pepper and tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's019', no: 19, name: 'Pizza Mushroom', description: 'Cheese, tomato, mushroom, olives & jalapeno.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 15.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's020', no: 20, name: 'Veggie Sausage Pizza', description: 'Cheese, tomato, sweetcorn, mixed pepper, onion, mushroom, topped with vegetarian sausage, jalapeno & tomato slices.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 13.0 }, { label: '16"', price: 17.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's021', no: 21, name: 'Indian Style Mix Veg. Pizza', description: 'Cheese, tomato & choice of any one spicy veg (Bengan Da Bhartha / Saag / Mix Veg / Tarka Palak) with coriander.', price: 5.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 5.0 }, { label: '12"', price: 12.5 }, { label: '16"', price: 16.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's022', no: 22, name: 'Pizza Style Garlic Bread (1 pc)', description: 'Medium base pizza with tomato sauce & garlic.', price: 3.0, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 3.0 }, { label: '12"', price: 4.5 }, { label: '16"', price: 6.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's023', no: 23, name: 'Extra Topping (each)', description: 'Choice of cheese, mixed peppers, onion, red onions, mushrooms, sweetcorn, olives, pineapple, tomatoes & jalapeno.', price: 0.25, category: 'italian-pizzas', section: 'Pizza (Thin Crust or Deep-pan)', sizes: [{ label: '9"', price: 0.25 }, { label: '12"', price: 0.4 }, { label: '16"', price: 0.6 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's024', no: 24, name: 'Family Deal 1', description: 'Any 3 large 16" pizzas, 2 large chips, 6 pcs garlic bread with cheese, 1 large drink (1.5 ltr).', price: 29.99, category: 'family-pizza-deal', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's025', no: 25, name: 'Family Deal 2', description: 'Any 4 large 16" pizzas, 3 large chips, 9 pcs garlic bread with cheese, 1 large drink (1.5 ltr).', price: 39.99, category: 'family-pizza-deal', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's026', no: 26, name: 'Family Deal 3', description: 'Any 3 medium 12" pizzas, 1 large chips, 4 pcs garlic bread with cheese, 1 large drink (1.5 ltr).', price: 21.0, category: 'family-pizza-deal', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's027', no: 27, name: 'Chilli Paneer', description: 'Indian cheese cooked with soya sauce, chillies, green peppers, onion and spices.', price: 6.0, category: 'indo-chinese', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/027.jpg' },
+  { id: 's028', no: 28, name: 'Vegetable Hakka Noodles', description: 'Noodles with soya sauce, mixed vegetables and spices.', price: 5.0, category: 'indo-chinese', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's029', no: 29, name: 'Vegetable Fried Rice', description: 'Vegetables and rice cooked in soya sauce and spices.', price: 4.5, category: 'indo-chinese', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's030', no: 30, name: 'Chilli Mushrooms', description: 'Mushrooms cooked with soya sauce, chillies, peppers, onions and spices.', price: 5.0, category: 'indo-chinese', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/030.jpg' },
+  { id: 's031', no: 31, name: 'Chilli Mogo', description: 'Cassava cooked with green peppers, onions, soya sauce and spices.', price: 6.0, category: 'indo-chinese', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's032', no: 32, name: 'Chilli Pasta', description: 'Pasta tossed Indo-Chinese style with chillies, peppers, onions and soya sauce.', price: 5.0, category: 'indo-chinese', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's033', no: 33, name: 'Lassi (Sweet, Salted, Mango or Plain)', description: 'Traditional chilled yoghurt drink - sweet, salted, mango or plain.', price: 1.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's034', no: 34, name: 'Milkshake (Mango / Chocolate / Banana)', description: 'Thick creamy milkshake in mango, chocolate or banana.', price: 1.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's035', no: 35, name: 'Milkshake (Vanilla / Strawberry)', description: 'Thick creamy milkshake in vanilla or strawberry.', price: 1.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's036', no: 36, name: 'Rubicon Cans', description: 'Rubicon exotic fruit drink, chilled can.', price: 0.99, category: 'drinks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's037', no: 37, name: 'Cans', description: 'Chilled soft drink can.', price: 0.99, category: 'drinks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's038', no: 38, name: 'Fresh Carrot Juice', description: 'Freshly pressed carrot juice.', price: 2.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's039', no: 39, name: 'Mix Juice', description: 'Freshly made mixed fruit juice.', price: 2.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/039.jpg' },
+  { id: 's040', no: 40, name: 'Apple Juice', description: 'Chilled apple juice.', price: 2.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's041', no: 41, name: 'Orange Juice', description: 'Chilled orange juice.', price: 2.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/041.jpg' },
+  { id: 's042', no: 42, name: 'Faluda', description: 'Rose milk with vermicelli, basil seeds and ice cream.', price: 3.0, category: 'drinks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's043', no: 43, name: 'Panjabi Tea', description: 'Punjabi-style masala chai brewed with milk and spices.', price: 1.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's044', no: 44, name: 'Coffee', description: 'Hot freshly made coffee.', price: 1.5, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's045', no: 45, name: 'Milk Coffee', description: 'Hot coffee made with milk.', price: 2.0, category: 'drinks', section: '', sizes: [{ label: 'Regular', price: 2.0 }, { label: 'Large', price: 2.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/045.jpg' },
+  { id: 's046', no: 46, name: 'Sada Dosa', description: 'Plain crispy rice & lentil crepe served with sambar and chutney.', price: 2.5, category: 'south-indian', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's047', no: 47, name: 'Masala Dosa', description: 'Crispy dosa filled with spiced potato masala, served with sambar and chutney.', price: 4.0, category: 'south-indian', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/047.jpg' },
+  { id: 's048', no: 48, name: 'Paneer Dosa', description: 'Crispy dosa filled with spiced paneer, served with sambar and chutney.', price: 4.5, category: 'south-indian', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's049', no: 49, name: 'Chilli Paneer Dosa', description: 'Crispy dosa filled with Indo-Chinese chilli paneer, served with sambar and chutney.', price: 5.0, category: 'south-indian', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's050', no: 50, name: 'Samosa (1 pc)', description: 'Crisp pastry filled with spiced potatoes and peas.', price: 0.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/050.jpg' },
+  { id: 's051', no: 51, name: 'Paneer Samosa (3 pcs)', description: 'Crisp pastry filled with spiced paneer.', price: 2.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's052', no: 52, name: 'Samosa Chaat', description: 'Crushed samosa topped with chickpeas, yoghurt, chutneys and spices.', price: 3.0, category: 'indian-starters', section: '', sizes: [{ label: 'Regular', price: 3.0 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's053', no: 53, name: 'Alloo Tikki (1 pc)', description: 'Spiced potato patty, shallow fried.', price: 0.75, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/053.jpg' },
+  { id: 's054', no: 54, name: 'Alloo Tikki Chaat', description: 'Potato tikki topped with chickpeas, yoghurt, chutneys and spices.', price: 3.0, category: 'indian-starters', section: '', sizes: [{ label: 'Regular', price: 3.0 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's055', no: 55, name: 'Mix Chaat', description: 'Mixed street-food chaat with yoghurt, tamarind and mint chutneys.', price: 3.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's056', no: 56, name: 'Paneer Spring Rolls (3 pcs)', description: 'Crispy rolls filled with spiced paneer.', price: 2.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's057', no: 57, name: 'Papadoms (2 pcs)', description: 'Crispy lentil wafers.', price: 1.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's058', no: 58, name: 'Spicy Papadoms (2 pcs)', description: 'Crispy lentil wafers with spicy seasoning.', price: 2.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's059', no: 59, name: 'Bhajia', description: 'Vegetable slices dipped in spiced gram-flour batter and deep fried.', price: 4.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/059.jpg' },
+  { id: 's060', no: 60, name: 'Lentil Kachori (3 pcs)', description: 'Flaky fried pastry balls stuffed with spiced lentils.', price: 3.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's061', no: 61, name: 'Veg. Spring Rolls (3 pcs)', description: 'Crispy rolls filled with mixed vegetables.', price: 1.8, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/061.jpg' },
+  { id: 's062', no: 62, name: 'Paneer Pakora (1 portion)', description: 'Paneer pieces in spiced gram-flour batter, deep fried.', price: 4.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's063', no: 63, name: 'Pakora (Onion Bhaji)', description: 'Crispy onion fritters in spiced gram-flour batter. Regular 4 pcs / Large 8 pcs.', price: 2.0, category: 'indian-starters', section: '', sizes: [{ label: 'Regular', price: 2.0 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/063.jpg' },
+  { id: 's064', no: 64, name: 'Gobhi Pakora (8 pcs)', description: 'Cauliflower florets in spiced gram-flour batter, deep fried.', price: 4.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's065', no: 65, name: 'Bread Pakora (2 pcs)', description: 'Bread stuffed with spiced potato, dipped in batter and fried.', price: 2.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's066', no: 66, name: 'Bhel', description: 'Puffed rice tossed with onion, potato, sev and tangy chutneys.', price: 3.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's067', no: 67, name: 'Pani Puri (6 pcs)', description: 'Crisp hollow puris with spiced potato and tangy mint water.', price: 2.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's068', no: 68, name: 'Sev Puri (6 pcs)', description: 'Flat puris topped with potato, onion, chutneys and sev.', price: 3.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's069', no: 69, name: 'Dahi Puri (6 pcs)', description: 'Crisp puris filled with potato, yoghurt and sweet & tangy chutneys.', price: 3.5, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's070', no: 70, name: 'Dahi Bhalla', description: 'Soft lentil dumplings soaked in yoghurt, topped with chutneys and spices.', price: 3.5, category: 'indian-starters', section: '', sizes: [{ label: 'Regular', price: 3.5 }, { label: 'Large', price: 4.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/070.jpg' },
+  { id: 's071', no: 71, name: 'Jeera Mogo', description: 'Cassava chunks tossed with cumin and spices.', price: 5.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's072', no: 72, name: 'Paneer Kebab', description: 'Spiced paneer kebab served with naan bread, salad & dip.', price: 6.0, category: 'indian-starters', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's073', no: 73, name: 'Alloo Parotha', description: 'Pan-cooked chapatti stuffed with mashed potato.', price: 1.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/073.jpg' },
+  { id: 's074', no: 74, name: 'Mooli Parotha', description: 'Pan-cooked chapatti stuffed with grated radish & herbs.', price: 1.75, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's075', no: 75, name: 'Methi Parotha', description: 'Sweet green herbs combined with pan-cooked chapatti.', price: 1.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/075.jpg' },
+  { id: 's076', no: 76, name: 'Sweet Parotha', description: 'Pan-cooked chapatti combined with sugar.', price: 1.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's077', no: 77, name: 'Plain Parotha', description: 'Plain pan-cooked chapatti.', price: 1.0, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/077.jpg' },
+  { id: 's078', no: 78, name: 'Gobi Parotha', description: 'Pan-cooked chapatti stuffed with grated cauliflower & herbs.', price: 2.0, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's079', no: 79, name: 'Paneer Parotha', description: 'Pan-cooked chapatti stuffed with grated paneer & herbs.', price: 2.0, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's080', no: 80, name: 'Mix Parotha', description: 'Pan-cooked chapatti stuffed with mixed ingredients & herbs.', price: 2.0, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's081', no: 81, name: 'Cheese Parotha', description: 'Pan-cooked chapatti stuffed with cheese, mixed ingredients & herbs.', price: 2.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's082', no: 82, name: 'Dehi', description: 'Yoghurt.', price: 0.75, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's083', no: 83, name: 'Raita', description: 'Yoghurt with grated cucumber and spices.', price: 1.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's084', no: 84, name: 'Butter', description: 'Slice of butter.', price: 0.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's085', no: 85, name: 'Pickle', description: 'Mixed pickle.', price: 0.5, category: 'indian-parotha', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's086', no: 86, name: 'Methi Makki Di Roti', description: 'Corn chapatti combined with herbs.', price: 1.75, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's087', no: 87, name: 'Makki Di Roti', description: 'Corn bread.', price: 1.25, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/087.jpg' },
+  { id: 's088', no: 88, name: 'Roti', description: 'Chapatti.', price: 0.5, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's089', no: 89, name: 'Bhatura', description: 'Fried bread.', price: 0.6, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's090', no: 90, name: 'Plain Naan', description: 'Leavened bread served with or without butter.', price: 1.5, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's091', no: 91, name: 'Garlic Naan', description: 'Leavened bread topped with garlic and coriander.', price: 1.75, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's092', no: 92, name: 'Chilly Naan', description: 'Leavened bread topped with green chilli and coriander.', price: 1.75, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's093', no: 93, name: 'Masala Naan', description: 'Leavened bread stuffed with spiced masala.', price: 1.75, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's094', no: 94, name: 'Veg. Fried Rice', description: 'Fried rice mixed with pieces of carrot, peas, sweetcorn and green beans.', price: 3.5, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's095', no: 95, name: 'Rice Biryani', description: 'Rice with mixed vegetables.', price: 2.5, category: 'side-orders', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/095.jpg' },
+  { id: 's096', no: 96, name: 'Plain Boiled Rice', description: 'Steamed basmati rice.', price: 1.5, category: 'side-orders', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's097', no: 97, name: 'Onions / Green Chilli', description: 'Fresh sliced onions and green chillies.', price: 0.5, category: 'side-orders', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's098', no: 98, name: 'Mix Salad', description: 'Lettuce, cucumber, tomato, onion, sweetcorn & chilli.', price: 2.5, category: 'salad', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/098.jpg' },
+  { id: 's099', no: 99, name: 'Tomato Salad', description: 'Chopped tomatoes with onion.', price: 2.5, category: 'salad', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's100', no: 100, name: 'Cholay', description: 'Chickpeas blended in spicy sauce. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's101', no: 101, name: 'Mahan Di Daal', description: 'Black mixed lentil curry garnished with spices & herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 4.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's102', no: 102, name: 'Moong Di Daal', description: 'Green lentil curry garnished with spices & herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 4.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's103', no: 103, name: 'Alloo Matar', description: 'Chunks of potatoes mixed with peas in curry sauce and herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's104', no: 104, name: 'Rajmaah', description: 'Kidney beans and potato chunks smoked in spicy sauce. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's105', no: 105, name: 'Masar Di Daal (Tarka Daal)', description: 'Yellow mixed lentil curry garnished with spices & herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 4.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's106', no: 106, name: 'Kari', description: 'Vegetable fritters (pakora) cooked in yellow curry. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's107', no: 107, name: 'Mixed Veg Sabji', description: 'Sweetcorn, green beans, peas and potatoes flavoured in spices. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/107.jpg' },
+  { id: 's108', no: 108, name: 'Alloo Palak', description: 'Spinach & potato cooked with spices and herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's109', no: 109, name: 'Alloo Gobi', description: 'Cauliflower and potato cooked in flavoured spices and herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's110', no: 110, name: 'Alloo Baingan', description: 'Aubergine and potato cooked in flavoured spices and herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's111', no: 111, name: 'Palak Paneer', description: 'Spinach & paneer flavoured in green herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/111.jpg' },
+  { id: 's112', no: 112, name: 'Matar Paneer', description: 'Paneer and peas cooked in brown spicy sauce. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/112.jpg' },
+  { id: 's113', no: 113, name: 'Kashmiri Paneer', description: 'Chunks of green pepper, onions and slices of paneer, cooked in flavoured spices & herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's114', no: 114, name: 'Paneer Bhurji', description: 'Dried paneer cooked in tasty cream sauce & spices. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's115', no: 115, name: 'Tikka Paneer', description: 'Chunks of paneer specially prepared with masala combined with spices. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's116', no: 116, name: 'Kofta', description: 'Herbs, onions & spices in gram flour, cooked with sliced potato, surrounded by a pool of curry sauce made with spices and peas. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's117', no: 117, name: 'Saag', description: 'Chopped spinach cooked with herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's118', no: 118, name: 'Baingan Da Burtha', description: 'Mashed aubergine cooked with spices & herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 6.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's119', no: 119, name: 'Karalee', description: 'Bitter gourd stuffed with spices and onions. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 6.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's120', no: 120, name: 'Tinda Sabji', description: 'Green vegetable cooked in spices & garnished with herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 6.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's121', no: 121, name: 'Bindi Tori', description: 'Chopped okra cooked in several spices and herbs. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 6.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's122', no: 122, name: 'Cheese Chilli', description: 'Paneer with special masala combined with spices, mingled with chunks of paneer. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's123', no: 123, name: 'Veggi Mince', description: 'Soya mince cooked in specially prepared masala & peas. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.5, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's124', no: 124, name: 'Sond Di Daal', description: 'Dry ginger cooked with onion, tomato & spices sauce. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 5.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's125', no: 125, name: 'Vegetable Biryani', description: 'Fragrant basmati rice layered with spiced mixed vegetables. Served with 2 bhaturas, 2 rotis or rice (not with delivery).', price: 6.0, category: 'indian-mains', section: 'Curries', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's126', no: 126, name: 'Tandoori Paneer', description: 'Marinated paneer, peppers and onions served sizzling on a hot plate.', price: 7.0, category: 'indian-mains', section: 'Sizzlers', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/126.jpg' },
+  { id: 's127', no: 127, name: 'Tandoori Mogo', description: 'Tandoori-spiced cassava with peppers and onions on a sizzling plate.', price: 7.0, category: 'indian-mains', section: 'Sizzlers', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's128', no: 128, name: 'Alloo Shaslik', description: 'Spiced potato skewers with peppers and onions on a sizzling plate.', price: 6.0, category: 'indian-mains', section: 'Sizzlers', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's129', no: 129, name: 'Star Special Sizzler', description: 'House special mixed sizzler of paneer, vegetables and spices.', price: 7.5, category: 'indian-mains', section: 'Sizzlers', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's130', no: 130, name: 'Regular Thali', description: 'Any two main dishes, rice or biryani rice, dehi or raita, 2 rotis or 2 bhaturas, kheer, regular lassi or soft drink.', price: 7.5, category: 'thali', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/130.jpg' },
+  { id: 's131', no: 131, name: 'Student Deal - One Time Per Day', description: 'Any one curry served with 3 roti or rice, once per day for a month.', price: 75.0, category: 'thali', section: 'Student Deal Monthly (Eat In or Take Away)', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's132', no: 132, name: 'Student Deal - Two Times Per Day', description: 'Any one large curry served with 6 roti or rice, twice per day for a month.', price: 130.0, category: 'thali', section: 'Student Deal Monthly (Eat In or Take Away)', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's133', no: 133, name: 'Kheer', description: 'Creamy Indian rice pudding with cardamom.', price: 2.0, category: 'sweets-desserts', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's134', no: 134, name: 'Gulab Jamun', description: 'Soft milk dumplings soaked in rose-cardamom syrup.', price: 2.0, category: 'sweets-desserts', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/134.jpg' },
+  { id: 's135', no: 135, name: 'Gulab Jamun with Ice Cream', description: 'Warm gulab jamun served with any ice cream.', price: 2.0, category: 'sweets-desserts', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's136', no: 136, name: 'Ice Cream', description: 'Choice of vanilla, strawberry or chocolate.', price: 2.0, category: 'sweets-desserts', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's137', no: 137, name: 'Mozzarella Sticks (4 pcs)', description: 'Breaded mozzarella sticks deep fried and served with salsa sauce.', price: 3.5, category: 'mexican', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's138', no: 138, name: 'Jalapeno Poppers (4 pcs)', description: 'Jalapeno halves brimming with smooth rich cream, covered with a light crunchy coating.', price: 3.5, category: 'mexican', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/138.jpg' },
+  { id: 's139', no: 139, name: 'Nachos', description: 'Crispy tortilla chips covered with a blend of grated cheese, hot jalapeno slices and salsa sauce.', price: 4.0, category: 'mexican', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's140', no: 140, name: 'Nachos Special', description: 'Crispy fried wheat-flour chips topped with refried beans, melted cheese, guacamole & salsa sauce.', price: 4.5, category: 'mexican', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's141', no: 141, name: 'Onion Rings', description: 'Crispy battered onion rings.', price: 3.5, category: 'mexican', section: 'Starters', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's142', no: 142, name: 'Mexican Chilli with Cheese Wrap', description: 'Soft tortilla wrap with spicy Mexican chilli filling, cheese and salad.', price: 6.5, category: 'mexican', section: 'Wraps', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's143', no: 143, name: 'Potato, Paneer and Sweetcorn Wrap', description: 'Soft tortilla wrap with spiced potato, paneer, sweetcorn and salad.', price: 6.5, category: 'mexican', section: 'Wraps', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/143.jpg' },
+  { id: 's144', no: 144, name: 'Chilli Paneer Wrap', description: 'Soft tortilla wrap filled with chilli paneer and salad.', price: 7.5, category: 'mexican', section: 'Wraps', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's145', no: 145, name: 'Mexican Rice', description: 'Rice cooked with tomato, peppers and Mexican spices.', price: 3.0, category: 'mexican', section: 'Wraps', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's146', no: 146, name: 'Plain Chips', description: 'Golden fried potato chips.', price: 1.5, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 1.5 }, { label: 'Large', price: 2.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's147', no: 147, name: 'Ambli Chips', description: 'Chips tossed in tangy tamarind (ambli) sauce.', price: 2.0, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.0 }, { label: 'Large', price: 3.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's148', no: 148, name: 'Chilli Chips', description: 'Chips tossed with chilli, peppers and onions.', price: 2.0, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.0 }, { label: 'Large', price: 3.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's149', no: 149, name: 'Masala Chips', description: 'Chips coated in spicy masala sauce.', price: 2.0, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.0 }, { label: 'Large', price: 3.0 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's150', no: 150, name: 'Plain Mogo Chips', description: 'Crispy fried cassava chips.', price: 2.5, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's151', no: 151, name: 'Spicy Mogo Chips', description: 'Cassava chips tossed in spicy masala.', price: 3.5, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 3.5 }, { label: 'Large', price: 4.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's152', no: 152, name: 'Potato Wedges with Dip', description: 'Seasoned potato wedges served with a dip.', price: 2.5, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's153', no: 153, name: 'Chip Butty', description: 'Hot chips in a buttered bread roll.', price: 2.5, category: 'snacks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's154', no: 154, name: 'Special Chip Butty', description: 'Chip butty with special toppings and sauce.', price: 3.5, category: 'snacks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's155', no: 155, name: 'Beans Topping', description: 'Baked beans topping.', price: 0.5, category: 'snacks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's156', no: 156, name: 'Cheese Topping', description: 'Grated cheese topping.', price: 0.6, category: 'snacks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's157', no: 157, name: 'Star Jacket Potato', description: 'Oven-baked jacket potato with butter.', price: 2.5, category: 'snacks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/157.jpg' },
+  { id: 's158', no: 158, name: 'Jacket Potato Topping (choose one)', description: 'Choose one: cheese, beans, sweetcorn, paneer, coleslaw or onion.', price: 0.5, category: 'snacks', section: '', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's159', no: 159, name: 'Veg. Mixed Burger', description: 'Mixed vegetable patty burger with salad. £3.50 with chips.', price: 2.5, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/159.jpg' },
+  { id: 's160', no: 160, name: 'Soya Burger', description: 'Soya patty burger with salad. £3.50 with chips.', price: 2.5, category: 'snacks', section: '', sizes: [{ label: 'Regular', price: 2.5 }, { label: 'Large', price: 3.5 }], diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's161', no: 161, name: 'Kids Veg. Burger Meal', description: 'Veg burger with chips and a small drink.', price: 4.0, category: 'snacks', section: 'Kids Meals (includes small drink)', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 's162', no: 162, name: 'Kids Veg. Finger Meal', description: 'Veg fingers with chips and a small drink.', price: 4.0, category: 'snacks', section: 'Kids Meals (includes small drink)', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '/menu/starvashnu/162.jpg' },
+  { id: 's163', no: 163, name: 'Kids 9" Pizza Meal', description: '9" cheese & tomato pizza with chips and a small drink.', price: 5.5, category: 'snacks', section: 'Kids Meals (includes small drink)', sizes: null, diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+]
+
+/** Twelve tables, all free - a brand-new client starts with an empty room. */
+export function seedStarTables() {
+  const tables = []
+  for (let n = 1; n <= 12; n += 1) {
+    tables.push({
+      id: String(n),
+      table_number: n,
+      status: 'available',
+      session_id: null,
+      seats: n <= 6 ? 2 : n <= 10 ? 4 : 6,
+    })
+  }
+  return tables
+}
+
+/**
+ * PLACEHOLDER STAFF - invented names, to be replaced with the real team at
+ * onboarding. Every demo account shares one password; addresses are scoped
+ * to the restaurant's own domain, which is what keeps two tenants' staff
+ * lists apart.
+ */
+export function seedStarStaff() {
+  return [
+    { id: 'u_star_owner', name: 'Meena', role: 'owner', email: 'meena@starvashnu.co.uk', password: 'demo1234', active: true },
+    { id: 'u_star_mgr', name: 'Arjun', role: 'manager', email: 'arjun@starvashnu.co.uk', password: 'demo1234', active: true },
+    { id: 'u_star_waiter1', name: 'Simran', role: 'waiter', email: 'simran@starvashnu.co.uk', password: 'demo1234', active: true },
+    { id: 'u_star_waiter2', name: 'Ravi', role: 'waiter', email: 'ravi@starvashnu.co.uk', password: 'demo1234', active: true },
+    { id: 'u_star_kitchen', name: 'Kitchen', role: 'kitchen', email: 'kitchen@starvashnu.co.uk', password: 'demo1234', active: true },
+  ]
+}
+
+/**
+ * Every tenant the mock knows. Firestore replaces this with the
+ * `restaurants` collection; the shape is deliberately the same.
+ */
+export const TENANTS = {
+  bobbys: {
+    name: RESTAURANT.name,
+    tagline: RESTAURANT.tagline,
+    status: 'active',
+    categories: CATEGORIES,
+    menu: MENU,
+    tables: seedTables,
+    staff: seedStaff,
+    soldOut: SEED_SOLD_OUT,
+  },
+  starvashnu: {
+    name: 'Star Vashnu Dhaba',
+    tagline: '100% pure vegetarian kitchen',
+    status: 'active',
+    categories: STAR_CATEGORIES,
+    menu: STAR_MENU,
+    tables: seedStarTables,
+    staff: seedStarStaff,
+    soldOut: [],
+  },
 }

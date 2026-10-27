@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { formatMoney } from '../../lib/format'
 import { Button, DietMark, NutsMark, Sheet, Stepper } from '../../components/ui'
 
+const NOTE_LIMIT = 500
+
 /**
  * Review step.
  *
@@ -15,12 +17,15 @@ import { Button, DietMark, NutsMark, Sheet, Stepper } from '../../components/ui'
  * One total, no tax breakdown: menu prices are what the guest pays.
  */
 export default function CartSheet({
+  payerLabel,
   partyName,
   tableNumber,
   lines,
   total,
+  note = '',
   submitting,
   onSetQty,
+  onSetNote,
   onClose,
   onSubmit,
 }) {
@@ -31,7 +36,7 @@ export default function CartSheet({
     <Sheet
       title={
         tableNumber
-          ? `${partyName ?? 'Your order'} · Table No ${tableNumber}`
+          ? `${payerLabel ?? partyName ?? 'Your order'} · Table No ${tableNumber}`
           : `Your order · ${count} item${count === 1 ? '' : 's'}`
       }
       onClose={onClose}
@@ -47,6 +52,23 @@ export default function CartSheet({
           >
             {submitting ? 'Sending…' : `Confirm order · ${formatMoney(total)}`}
           </Button>
+
+          {/*
+            Named rather than left to the × in the corner. Sending the order
+            and going back for more are both ordinary things to want here,
+            and only one of them was previously spelled out.
+          */}
+          <Button
+            full
+            size="lg"
+            variant="secondary"
+            className="mt-2"
+            disabled={submitting}
+            onClick={onClose}
+          >
+            Continue ordering
+          </Button>
+
           <p className="tabular mt-2 text-center text-[12px] text-ink-faint">
             {count} item{count === 1 ? '' : 's'}
           </p>
@@ -91,6 +113,48 @@ export default function CartSheet({
           </li>
         ))}
       </ul>
+
+      {/*
+        One box for the whole order, spelled out rather than hidden behind an
+        icon. Asking for a change to the food is a normal part of ordering, so
+        the place to ask is visible without being hunted for.
+      */}
+      <div className="mt-5">
+        <label className="block">
+          <span className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+            Any special requirements
+          </span>
+          <textarea
+            rows={3}
+            maxLength={NOTE_LIMIT}
+            value={note}
+            onChange={(event) => onSetNote(event.target.value)}
+            placeholder="No chilli in the lasagne, one portion mild for a child, extra napkins…"
+            className="w-full resize-y rounded-control border border-line-strong bg-sunken px-3.5 py-2.5 text-[15px] leading-relaxed text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent"
+          />
+        </label>
+
+        <div className="mt-1 flex items-baseline justify-between gap-3">
+          <p className="text-[12px] leading-relaxed text-ink-faint">
+            The kitchen sees this with your order. For a serious allergy please
+            tell your waiter as well.
+          </p>
+          <span
+            className={`tabular shrink-0 text-[11px] ${
+              note.length >= NOTE_LIMIT ? 'text-state-late' : 'text-ink-faint'
+            }`}
+          >
+            {note.length}/{NOTE_LIMIT}
+          </span>
+        </div>
+      </div>
+
+      {payerLabel && (
+        <p className="mt-3 rounded-card border border-line bg-sunken px-4 py-2.5 text-[12px] leading-relaxed text-ink-faint">
+          This goes on <strong className="text-ink-soft">{payerLabel}</strong>&rsquo;s
+          bill &mdash; you only pay for what you order here.
+        </p>
+      )}
 
       <div className="mt-4 flex items-baseline justify-between rounded-card border border-line bg-sunken px-4 py-3">
         <span className="text-[14px] font-semibold">Total</span>
