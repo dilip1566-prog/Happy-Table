@@ -18,30 +18,78 @@ npm install && npm run dev
 
 ---
 
-## Switching back to Firebase
+## Switching to Firebase
 
-One constant, in [src/data/index.js](src/data/index.js):
+Everything above [src/data/index.js](src/data/index.js) — every hook, every
+component — imports its data from `src/data` and has no idea which backend is
+behind it. The Firestore side lives in [src/firebase.js](src/firebase.js) and
+[src/data/firestoreAdapter.js](src/data/firestoreAdapter.js), and exposes the
+same function surface as the mock.
 
-```js
-export const USE_MOCK = false
-```
+The order below matters. Seeding before the rules are deployed leaves the
+database briefly open; flipping the switch before seeding gives you an empty
+restaurant and a sign-in that cannot succeed.
 
-Everything above that file — every hook, every component — imports its data
-from `src/data` and has no idea which backend is behind it. The Firestore code
-is untouched in [src/firebase.js](src/firebase.js),
-[src/lib/actions.js](src/lib/actions.js) and
-[src/data/firestoreAdapter.js](src/data/firestoreAdapter.js).
+1. **Fill in `.env`** — the six `VITE_FIREBASE_*` values from Firebase
+   console → Project settings → Your apps → Web app → Config. See
+   `.env.example`. Gitignored; restart Vite afterwards, which only reads it
+   at startup.
 
-Two things to do at the same time:
+2. **Enable the two services** in the console: Firestore Database
+   (production mode) and Authentication → Email/Password.
 
-1. **Fill in `.env`** (see `.env.example`) and create the Firestore database.
-2. **Add the four new menu fields.** The design needed `category`,
-   `description`, `diet` and `spice`, which the original schema did not have.
-   `ManagerMenu` already writes them; existing menu documents need
-   backfilling. `scripts/seed.js` writes the old shape and should be updated
-   from `src/mock/data.js`, which has the full shape.
+3. **Deploy the rules and indexes.** `firebase.json` points the CLI at
+   `firestore.rules` and `firestore.indexes.json`:
 
-Also note `useMenu` currently subscribes rather than fetching, purely so a
+   ```
+   firebase deploy --only firestore:rules,firestore:indexes
+   ```
+
+   Seeding needs a platform admin, and `firestore.rules` lets no client
+   create the first one. Either seed with the Admin SDK (step 4), write
+   `platformAdmins/{uid}` by hand in the console, or open the one-time
+   bootstrap window documented in `firestore.rules` — commented out there
+   on purpose, because this repository is public and Firebase Email/Password
+   signup does not verify address ownership. Close it again straight after.
+
+   With a platform admin in place, `/dev/seed` seeds from the browser using
+   only the public web keys — no service account needed. That route exists
+   only in dev builds.
+
+4. **Seed.** `scripts/seed.js` runs on the **Admin SDK** and needs a service
+   account key (console → Project settings → Service accounts → Generate new
+   private key) saved as `serviceAccount.json` in this folder. That file is a
+   real secret and is gitignored — unlike the six `VITE_` values, which ship
+   in every browser bundle by design.
+
+   ```
+   npm run seed -- --admin you@email.com
+   ```
+
+   It writes both restaurants from `src/mock/data.js`, so the live database
+   and the demo cannot drift apart, and creates one Auth account per staff
+   member. `--admin` also writes `platformAdmins/{uid}`, which is what the
+   operator console at the apex domain checks. Re-running is safe.
+
+   The seeder must bypass the rules, and does: a restaurant may only be
+   created by a platform admin, a menu only by a manager, and the owner's own
+   staff document only by an owner — which cannot exist before that document
+   does. A browser-SDK seeder cannot break that circle.
+
+5. **Flip the switch** in [src/data/index.js](src/data/index.js):
+
+   ```js
+   export const USE_MOCK = false
+   ```
+
+6. **Change the passwords.** Everyone is seeded with the demo password.
+   Each person should use Forgot password on first sign-in; by design a
+   manager cannot set someone else's password.
+
+For live subdomains, add the apex domain under Authentication → Settings →
+Authorized domains, or sign-in is refused there.
+
+Note `useMenu` currently subscribes rather than fetching, purely so a
 newly-added dish shows up instantly while the design is being reviewed. It
 already branches on `USE_MOCK` and collapses back to a single cached
 `getDocs()` when you flip the switch.
@@ -240,8 +288,16 @@ Checked by hand: cart and GST totals, the 86 toggle greying a dish out on a
 *separate browser tab*, ticket urgency colouring (red past the quote, amber
 approaching it), live elapsed clocks, and the image fallback.
 
-Not yet exercised: anything against real Firestore — `USE_MOCK` has been true
-throughout.
+**Rules: verified against live Firestore** (project `happy-table-42d9e`, on an
+empty database). Reads of the restaurant record and menu are open as intended;
+unauthenticated reads of `staff` and `platformAdmins`, and unauthenticated
+writes to restaurants, menus, staff, sessions and unmatched collections, all
+return 403. Probed over the REST API with no auth token, which is exactly how
+a stranger arrives.
+
+Not yet exercised: the app's own read and write paths against real Firestore —
+`USE_MOCK` has been true throughout, so the adapter has never run against
+anything but the mock.
 
 ---
 
