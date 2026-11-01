@@ -14,8 +14,11 @@ rules_version = '2';
 // document read per rule evaluation — acceptable at this scale, and it keeps
 // a leaver's access removable with a single Firestore write.
 //
-// UNTESTED against a live project. Run these through the rules simulator
-// before any real data exists.
+// Seeding deliberately cannot happen through these rules: a restaurant may
+// only be created by a platform admin, a menu only by a manager, and an
+// owner's own staff document only by an owner — which cannot exist before
+// that document does. scripts/seed.js therefore runs on the Admin SDK and
+// bypasses this file. Nothing a guest or staff member touches does.
 // ===========================================================================
 
 service cloud.firestore {
@@ -47,7 +50,8 @@ service cloud.firestore {
       return isStaff(rid) && roleOf(rid) in ['owner', 'manager'];
     }
 
-    // Us, not them. Set once by hand in the console on your own account.
+    // Us, not them. Written once by the seeder's --admin flag, or by hand
+    // in the console; never writable from the app.
     function isPlatformAdmin() {
       return request.auth != null
         && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
@@ -139,10 +143,37 @@ service cloud.firestore {
     // --- platform ----------------------------------------------------------
 
     match /platformAdmins/{uid} {
-      // Readable by the account itself so the console can check; writable
-      // only from the Firebase console, by hand.
+      // Readable by the account itself so the operator console can check.
       allow read: if request.auth != null && request.auth.uid == uid;
+
+      // Never writable from a client. This is the line the whole tenancy
+      // model rests on: no account can promote itself to platform admin, so
+      // no restaurant can reach another restaurant's data.
       allow write: if false;
+
+      // -------------------------------------------------------------------
+      // ONE-TIME BOOTSTRAP — deliberately committed in disarmed form.
+      // -------------------------------------------------------------------
+      // A brand new project has no platform admin, and the line above means
+      // no client can create the first one. The options are an Admin SDK key
+      // (scripts/seed.js), writing the document by hand in the console, or
+      // temporarily pasting the block below into the console WITH a real
+      // address and a near-future date, claiming once, then publishing this
+      // file again to close it.
+      //
+      // It stays commented out here on purpose. This repository is public,
+      // and an armed window plus a known address is a standing invitation —
+      // Firebase Email/Password signup does NOT verify that the person
+      // registering an address owns it, so anyone holding the project's web
+      // API key could register the named address themselves, provided no
+      // account for it exists yet. The window is only safe while the account
+      // already exists and is one you control.
+      //
+      //   allow create: if request.auth != null
+      //     && request.auth.uid == uid
+      //     && request.auth.token.email == 'you@example.com'
+      //     && request.time < timestamp.date(2026, 1, 1);
+      //   allow update, delete: if false;
     }
 
     // Anything not matched above is denied.

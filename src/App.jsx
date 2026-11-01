@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { TenantProvider } from './tenant/TenantProvider'
 import { AuthProvider } from './auth/AuthProvider'
@@ -13,6 +14,14 @@ import ManagerBilling from './routes/manager/ManagerBilling'
 import ManagerSales from './routes/manager/ManagerSales'
 import ManagerStaff from './routes/manager/ManagerStaff'
 import KitchenView from './routes/kitchen/KitchenView'
+
+/**
+ * One-off seeding screen for a live Firebase project. `import.meta.env.DEV`
+ * is replaced with a literal at build time, so this whole branch is dead code
+ * in production and the chunk is never emitted — the route simply does not
+ * exist there.
+ */
+const SeedPage = import.meta.env.DEV ? lazy(() => import('./dev/SeedPage')) : null
 
 /**
  * One deployment, many restaurants.
@@ -96,6 +105,17 @@ export default function App() {
               </Require>
             }
           />
+
+          {SeedPage && (
+            <Route
+              path="/dev/seed"
+              element={
+                <Suspense fallback={null}>
+                  <SeedPage />
+                </Suspense>
+              }
+            />
+          )}
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
