@@ -61,8 +61,13 @@ service cloud.firestore {
 
     match /restaurants/{rid} {
       // A guest must be able to resolve a subdomain before signing in to
-      // anything, so the record itself is public. Keep it to presentation
-      // fields — never put billing or contact details on this document.
+      // anything, so the record itself is public — and a restaurant on its
+      // own domain is resolved by querying customDomain across the whole
+      // collection, which needs list access too.
+      //
+      // Keep it to presentation fields. Never put billing, subscription or
+      // contact details on this document: it is readable by the entire
+      // internet, and no rule below can narrow that afterwards.
       allow read: if true;
       allow create, delete: if isPlatformAdmin();
       allow update: if isPlatformAdmin() || isOwner(rid);
@@ -70,7 +75,12 @@ service cloud.firestore {
       // --- menu ----------------------------------------------------------
       match /menuItems/{itemId} {
         allow read: if true;                       // guests browse freely
-        allow write: if isManagerUp(rid);
+        // A platform admin writes menus too, and has to: the operator
+        // console loads a restaurant's menu during onboarding, before any
+        // manager account exists to do it. Loading a menu from a spreadsheet
+        // is the single biggest cost of getting a restaurant live, so it
+        // cannot wait for the owner to first sign in.
+        allow write: if isManagerUp(rid) || isPlatformAdmin();
       }
 
       // --- tables ----------------------------------------------------------
@@ -86,7 +96,11 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           );
 
-        allow create, delete: if isManagerUp(rid);
+        // Platform admin included, because a new restaurant is created with
+        // its tables already numbered — a restaurant with no tables cannot
+        // seat anybody, so provisioning that stopped short of this would
+        // hand over something that looks ready and is not.
+        allow create, delete: if isManagerUp(rid) || isPlatformAdmin();
       }
 
       // --- sessions --------------------------------------------------------
@@ -123,8 +137,13 @@ service cloud.firestore {
       match /config/{docId} {
         // Guests read the 86 list so sold-out dishes grey out live.
         allow read: if true;
-        // Only the owner may change who can do what.
-        allow write: if docId == 'access' ? isOwner(rid) : isStaff(rid);
+        // Only the owner may change who can do what — plus a platform admin,
+        // who writes the starting matrix when the restaurant is created. No
+        // owner account exists at that moment, so without this a new
+        // restaurant would come up with no permissions at all and its first
+        // sign-in would land on a padlock.
+        allow write: if isPlatformAdmin()
+          || (docId == 'access' ? isOwner(rid) : isStaff(rid));
       }
 
       // --- staff ------------------------------------------------------------
@@ -136,7 +155,26 @@ service cloud.firestore {
         // Only the owner hires, changes roles, or deactivates. Note a person
         // cannot edit their own record — that would let a waiter promote
         // themselves.
-        allow create, update, delete: if isOwner(rid) || isPlatformAdmin();
+        allow create, delete: if isOwner(rid) || isPlatformAdmin();
+
+        // One exception, as narrow as it can be written: on first sign-in a
+        // person may clear their OWN mustSetPassword flag, and change
+        // nothing else. Firebase completes a password reset without telling
+        // the app, so that first sign-in is the only moment anything knows
+        // they are no longer waiting to choose one.
+        //
+        // hasOnly() pins it to that single key and the == false pins the
+        // direction, so this cannot carry a role change, a reactivation or
+        // any other field in alongside it. Without it the rule above denies
+        // the write and the owner's People screen shows "Invited" against
+        // someone who signed in weeks ago.
+        allow update: if isOwner(rid) || isPlatformAdmin()
+          || (
+            request.auth != null
+            && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mustSetPassword'])
+            && request.resource.data.mustSetPassword == false
+          );
       }
     }
 

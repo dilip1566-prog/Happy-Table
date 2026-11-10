@@ -510,6 +510,86 @@ export function seedStarStaff() {
   ]
 }
 
+// ---------------------------------------------------------------------------
+// Feast India — the third demo tenant.
+//
+// Deliberately unlike the other two: it serves meat, so it is the only
+// restaurant here that exercises `diet: 'non-veg'` and proves the dish marks
+// are not quietly assuming a vegetarian kitchen. It is also small — 26
+// dishes against Bobby's 171 — which is what a restaurant looks like the day
+// after onboarding, before the full book has been typed in.
+//
+// It carries a `customDomain`, so it doubles as the test case for a
+// restaurant that has pointed its own domain at us.
+// ---------------------------------------------------------------------------
+
+export const FEAST_CATEGORIES = [
+  { id: 'starters', label: 'Starters' },
+  { id: 'tandoor', label: 'From the Tandoor' },
+  { id: 'curries', label: 'Curries' },
+  { id: 'biryani', label: 'Biryani' },
+  { id: 'rice-breads', label: 'Rice & Breads' },
+  { id: 'sides', label: 'Sides' },
+  { id: 'desserts', label: 'Desserts' },
+  { id: 'drinks', label: 'Drinks' },
+]
+
+export const FEAST_MENU = [
+  { id: 'f001', no: 1, name: 'Onion Bhaji (3)', description: 'Sliced onion in spiced gram flour batter, fried crisp.', price: 4.25, category: 'starters', diet: 'vegan', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f002', no: 2, name: 'Vegetable Samosa (2)', description: 'Pastry parcels of potato, pea and cumin.', price: 4.5, category: 'starters', diet: 'vegan', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f003', no: 3, name: 'Chicken Pakora', description: 'Marinated chicken thigh in a light spiced batter, with mint chutney.', price: 6.25, category: 'starters', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f004', no: 4, name: 'Lamb Seekh Kebab (2)', description: 'Minced lamb with ginger, chilli and coriander, grilled on skewers.', price: 6.95, category: 'starters', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f005', no: 5, name: 'Paneer Tikka', description: 'Cubes of paneer in yoghurt and spices, charred with peppers and onion.', price: 6.5, category: 'starters', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f006', no: 6, name: 'Chicken Tikka', description: 'Boneless thigh in a yoghurt and red spice marinade, straight off the skewer.', price: 8.95, category: 'tandoor', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f007', no: 7, name: 'Tandoori Chicken (half)', description: 'On the bone, marinated overnight, finished in the clay oven.', price: 9.5, category: 'tandoor', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f008', no: 8, name: 'Lamb Chops (3)', description: 'Thick-cut chops in a dark chilli and garam masala rub.', price: 12.95, category: 'tandoor', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f009', no: 9, name: 'Tandoori King Prawns', description: 'Four king prawns with carom seed and lime.', price: 13.5, category: 'tandoor', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f010', no: 10, name: 'Chicken Tikka Masala', description: 'Grilled chicken in a mild creamed tomato sauce with almond.', price: 10.95, category: 'curries', diet: 'non-veg', nuts: true, isNew: false, weekend: false, image_url: '' },
+  { id: 'f011', no: 11, name: 'Lamb Rogan Josh', description: 'Slow-cooked shoulder with tomato, cardamom and Kashmiri chilli.', price: 11.95, category: 'curries', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f012', no: 12, name: 'Butter Chicken', description: 'Tandoori chicken folded through butter, tomato and fenugreek.', price: 11.5, category: 'curries', diet: 'non-veg', nuts: true, isNew: true, weekend: false, image_url: '' },
+  { id: 'f013', no: 13, name: 'Saag Gosht', description: 'Lamb with spinach, ginger and green chilli.', price: 11.95, category: 'curries', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f014', no: 14, name: 'Prawn Malabar', description: 'Coconut, curry leaf and mustard seed, in the Keralan style.', price: 12.95, category: 'curries', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f015', no: 15, name: 'Dal Makhani', description: 'Black lentils cooked overnight with butter and cream.', price: 8.5, category: 'curries', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f016', no: 16, name: 'Paneer Butter Masala', description: 'Paneer in a sweet tomato and cashew gravy.', price: 9.5, category: 'curries', diet: 'veg', nuts: true, isNew: false, weekend: false, image_url: '' },
+  { id: 'f017', no: 17, name: 'Chana Masala', description: 'Chickpeas with onion, tomato and amchur.', price: 8.25, category: 'curries', diet: 'vegan', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f018', no: 18, name: 'Chicken Biryani', description: 'Sealed and baked with basmati, saffron and fried onion. Served with raita.', price: 12.5, category: 'biryani', diet: 'non-veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f019', no: 19, name: 'Lamb Biryani', description: 'Layered with slow-cooked lamb and whole spice. Served with raita.', price: 13.5, category: 'biryani', diet: 'non-veg', nuts: false, isNew: false, weekend: true, image_url: '' },
+  { id: 'f020', no: 20, name: 'Vegetable Biryani', description: 'Seasonal vegetables, mint and saffron rice. Served with raita.', price: 10.5, category: 'biryani', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f021', no: 21, name: 'Pilau Rice', description: 'Basmati with cumin and bay.', price: 3.5, category: 'rice-breads', diet: 'vegan', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f022', no: 22, name: 'Garlic Naan', description: 'Tandoor-baked, brushed with garlic butter and coriander.', price: 3.75, category: 'rice-breads', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f023', no: 23, name: 'Peshwari Naan', description: 'Stuffed with coconut, sultana and almond.', price: 4.25, category: 'rice-breads', diet: 'veg', nuts: true, isNew: false, weekend: false, image_url: '' },
+  { id: 'f024', no: 24, name: 'Raita', description: 'Yoghurt with cucumber, mint and toasted cumin.', price: 2.5, category: 'sides', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f025', no: 25, name: 'Gulab Jamun (2)', description: 'Warm milk dumplings in rose syrup.', price: 4.5, category: 'desserts', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+  { id: 'f026', no: 26, name: 'Mango Lassi', description: 'Yoghurt blended with Alphonso mango.', price: 3.75, category: 'drinks', diet: 'veg', nuts: false, isNew: false, weekend: false, image_url: '' },
+]
+
+export function seedFeastTables() {
+  const tables = []
+  for (let n = 1; n <= 16; n += 1) {
+    tables.push({
+      id: String(n),
+      table_number: n,
+      status: 'available',
+      session_id: null,
+      seats: n <= 4 ? 2 : n <= 12 ? 4 : 6,
+    })
+  }
+  return tables
+}
+
+/**
+ * PLACEHOLDER STAFF — invented names, to be replaced with the real team at
+ * onboarding, exactly as for the Dhaba.
+ */
+export function seedFeastStaff() {
+  return [
+    { id: 'u_feast_owner', name: 'Nadia', role: 'owner', email: 'nadia@feastindia.co.uk', password: 'demo1234', active: true },
+    { id: 'u_feast_mgr', name: 'Omar', role: 'manager', email: 'omar@feastindia.co.uk', password: 'demo1234', active: true },
+    { id: 'u_feast_waiter', name: 'Aisha', role: 'waiter', email: 'aisha@feastindia.co.uk', password: 'demo1234', active: true },
+    { id: 'u_feast_kitchen', name: 'Kitchen', role: 'kitchen', email: 'kitchen@feastindia.co.uk', password: 'demo1234', active: true },
+  ]
+}
+
 /**
  * Every tenant the mock knows. Firestore replaces this with the
  * `restaurants` collection; the shape is deliberately the same.
@@ -534,5 +614,18 @@ export const TENANTS = {
     tables: seedStarTables,
     staff: seedStarStaff,
     soldOut: [],
+  },
+  feastindia: {
+    name: 'Feast India',
+    tagline: 'Tandoor, curry house & grill',
+    status: 'active',
+    // The one tenant on its own domain, so the custom-domain branch of the
+    // tenant gate has something to resolve against in the demo.
+    customDomain: 'feastindia.co.uk',
+    categories: FEAST_CATEGORIES,
+    menu: FEAST_MENU,
+    tables: seedFeastTables,
+    staff: seedFeastStaff,
+    soldOut: ['f009'],
   },
 }

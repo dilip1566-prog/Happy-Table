@@ -15,7 +15,10 @@
 import { TENANTS } from './data'
 import { DEFAULT_ROLE_PERMISSIONS } from '../auth/permissions'
 import { getActiveTenant } from '../tenant/current'
+import { tenantUrl } from '../tenant/resolve'
 import { isValidEmail, normaliseEmail } from '../lib/validate'
+import { passwordProblem } from '../lib/passwords'
+import { slugProblem } from '../lib/slug'
 
 const LATENCY_MS = 180
 
@@ -28,8 +31,136 @@ const LATENCY_MS = 180
  */
 const stores = new Map()
 
+/**
+ * Restaurants created at runtime from the operator console.
+ *
+ * Held apart from TENANTS, which is seed data compiled into the bundle, and
+ * persisted to localStorage — the one deliberate exception to "nothing here
+ * persists". The platform's roster of restaurants lives in Firestore in
+ * production and survives a page load there, so a demo where a restaurant
+ * you just created 404s on the next navigation would be testing the wrong
+ * thing. Live service state — tables, orders, sessions — stays in memory and
+ * still resets on reload.
+ */
+const REGISTRY_KEY = 'happytable-mock-restaurants'
+
+const extraTenants = new Map()
+
+/** Rehydrate into the same shape TENANTS uses, so nothing downstream cares. */
+function hydrateTenant(record) {
+  const tablesCount = Number(record.tablesCount) || 20
+  return {
+    ...record,
+    tables: () =>
+      Array.from({ length: tablesCount }, (_, index) => ({
+        id: String(index + 1),
+        table_number: index + 1,
+        status: 'available',
+        session_id: null,
+        seats: index < 4 ? 2 : index < tablesCount - 2 ? 4 : 6,
+      })),
+    staff: () => (record.staffSeed ?? []).map((person) => ({ ...person })),
+  }
+}
+
+function loadRegistry() {
+  try {
+    const raw = localStorage.getItem(REGISTRY_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    for (const [id, record] of Object.entries(parsed ?? {})) {
+      extraTenants.set(id, hydrateTenant(record))
+    }
+  } catch {
+    /* private mode, or a registry written by an older shape — start clean */
+  }
+}
+
+function saveRegistry() {
+  try {
+    const plain = {}
+    for (const [id, tenant] of extraTenants) {
+      // Drop the two generated functions; everything else is JSON already.
+      const { tables, staff, ...rest } = tenant
+      plain[id] = rest
+    }
+    localStorage.setItem(REGISTRY_KEY, JSON.stringify(plain))
+  } catch {
+    /* non-fatal: the restaurant still works until this tab closes */
+  }
+}
+
+loadRegistry()
+
+/**
+ * Outstanding set-your-password links, also persisted.
+ *
+ * Same reasoning as the registry, and the same exception. In Firebase these
+ * are minted and held by Auth, so they survive the browser being closed; a
+ * mock that lost them the moment the link was clicked would make the invite
+ * flow impossible to demonstrate, because clicking a link IS a page load.
+ *
+ * Nothing of value is protected by these in demo mode — the staff list has
+ * plaintext passwords in it already — so this is no weaker than what sits
+ * beside it. The real backend keeps all of it server-side.
+ */
+const RESETS_KEY = 'happytable-mock-resets'
+
+function readResetStore() {
+  try {
+    const raw = localStorage.getItem(RESETS_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function loadResets(tenantId) {
+  const rows = readResetStore()[tenantId]
+  return Array.isArray(rows) ? rows : []
+}
+
+function persistResets(tenantId, resets) {
+  try {
+    const all = readResetStore()
+    all[tenantId] = resets
+    localStorage.setItem(RESETS_KEY, JSON.stringify(all))
+  } catch {
+    /* non-fatal: the link still works until this tab closes */
+  }
+}
+
+/**
+ * Keep a password a runtime-created restaurant's owner has just chosen.
+ *
+ * Their staff list is rebuilt from the registry on every load, so without
+ * this the owner sets a password, reloads, and is locked out of a
+ * restaurant that was created ten seconds ago. Seeded restaurants are not
+ * affected: theirs come back as demo1234 by design.
+ */
+function rememberSeedPassword(tenantId, person) {
+  const runtime = extraTenants.get(tenantId)
+  if (!runtime) return
+  const seeded = (runtime.staffSeed ?? []).find((row) => row.id === person.id)
+  if (!seeded) return
+  seeded.password = person.password
+  delete seeded.mustSetPassword
+  saveRegistry()
+}
+
+/** Seed data for a restaurant, whether compiled in or created today. */
+function tenantDef(id) {
+  return extraTenants.get(id) ?? TENANTS[id] ?? null
+}
+
+/** Every restaurant the mock knows about, newest last. */
+function allTenantEntries() {
+  return [...Object.entries(TENANTS), ...extraTenants.entries()]
+}
+
 function createStore(tenantId) {
-  const seed = TENANTS[tenantId] ?? TENANTS.bobbys
+  const seed = tenantDef(tenantId) ?? TENANTS.bobbys
   return {
     state: {
       tables: seed.tables(),
@@ -39,6 +170,11 @@ function createStore(tenantId) {
       soldOut: [...(seed.soldOut ?? [])],
       staff: seed.staff(),
       rolePermissions: JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMISSIONS)),
+      // Outstanding set-your-password links. Firebase keeps these itself and
+      // mails them out; with no mail server here they are handed back to the
+      // caller to pass on by hand, and kept across page loads so that
+      // clicking one does not destroy it.
+      resets: loadResets(tenantId),
     },
     // collection name -> Set of callbacks
     listeners: {
@@ -67,10 +203,14 @@ const L = () => storeFor().listeners
 const clone = (value) => JSON.parse(JSON.stringify(value))
 const wait = (ms = LATENCY_MS) => new Promise((resolve) => setTimeout(resolve, ms))
 
+function payloadFor(target, key) {
+  if (key === 'inventory') return { sold_out_items: [...target.state.soldOut] }
+  if (key === 'access') return clone(target.state.rolePermissions)
+  return clone(target.state[key])
+}
+
 function snapshotFor(key) {
-  if (key === 'inventory') return { sold_out_items: [...S().soldOut] }
-  if (key === 'access') return clone(S().rolePermissions)
-  return clone(S()[key])
+  return payloadFor(storeFor(), key)
 }
 
 /**
@@ -91,14 +231,28 @@ function emitLocal(key) {
   for (const callback of L()[key]) callback(payload)
 }
 
-function emit(key) {
-  emitLocal(key)
+/**
+ * Notify one named restaurant's listeners.
+ *
+ * Named rather than active, because the operator console writes menus for
+ * restaurants it is not itself "inside" — on the apex there is no active
+ * tenant at all, so an emit that asked `getActiveTenant()` would quietly
+ * fire into Bobby's store while editing somebody else's menu.
+ */
+function emitFor(tenantId, key) {
+  const target = storeFor(tenantId)
+  const payload = payloadFor(target, key)
+  for (const callback of target.listeners[key]) callback(payload)
   channel?.postMessage({
     type: 'state',
-    tenant: getActiveTenant(),
+    tenant: tenantId,
     key,
-    state: clone(S()),
+    state: clone(target.state),
   })
+}
+
+function emit(key) {
+  emitFor(getActiveTenant() || 'bobbys', key)
 }
 
 /**
@@ -120,6 +274,9 @@ function adopt(tenant, incoming) {
     soldOut: incoming.soldOut,
     staff: incoming.staff,
     rolePermissions: incoming.rolePermissions,
+    // Carried across tabs like everything else, or a link issued in the
+    // owner's window would be unredeemable in the one the new starter opens.
+    resets: incoming.resets ?? [],
   }
   // Notify locally only — re-broadcasting here would put two tabs in an
   // endless echo.
@@ -254,14 +411,27 @@ export function suggestAccessCode() {
  */
 export async function listRestaurants() {
   await wait(120)
-  return Object.entries(TENANTS).map(([id, tenant]) => ({
+  return allTenantEntries().map(([id, tenant]) => ({
     id,
     subdomain: id,
     name: tenant.name,
     tagline: tenant.tagline,
     status: tenant.status,
+    // Carried here because the operator console edits menus from this list
+    // without ever opening the restaurant: without the sections, the
+    // quick-add form has nothing to file a dish under and the menu is
+    // grouped by raw slug instead of by the restaurant's own headings.
+    // Firestore returns them for free by spreading the document.
+    categories: tenant.categories ?? [],
+    customDomain: tenant.customDomain ?? null,
+    currency: tenant.currency ?? 'GBP',
+    ownerEmail: tenant.ownerEmail ?? tenant.staff()[0]?.email ?? '',
+    createdAt: tenant.createdAt ?? null,
     tables: tenant.tables().length,
-    dishes: tenant.menu.length,
+    // Read through the live store where one exists, so a dish added a moment
+    // ago is counted. Falling back to the seed means a restaurant nobody has
+    // opened yet still reports its real size.
+    dishes: (stores.get(id)?.state.menu ?? tenant.menu).length,
   }))
 }
 
@@ -693,6 +863,17 @@ export async function signInWithEmail(email, password) {
   return safe
 }
 
+/**
+ * Hire someone.
+ *
+ * `password` is optional, and leaving it out is the better path: the profile
+ * is created with no password at all and an invite link is handed back for
+ * the new starter to set their own. A password the owner types is a password
+ * the owner knows, which then has to be communicated across a noisy kitchen
+ * and usually ends up on a sticky note by the till.
+ *
+ * Returns the invite when there is one, so the caller can pass it on.
+ */
 export async function addStaff({ name, role, email, password }) {
   await wait()
   const trimmed = String(name || '').trim()
@@ -703,19 +884,34 @@ export async function addStaff({ name, role, email, password }) {
   if (S().staff.some((u) => normaliseEmail(u.email) === address)) {
     throw new Error('Someone here already uses that email address.')
   }
-  if (String(password ?? '').length < 8) {
-    throw new Error('Password must be at least 8 characters.')
+
+  const chosen = String(password ?? '')
+  if (chosen) {
+    const problem = passwordProblem(chosen)
+    if (problem) throw new Error(problem)
   }
 
-  S().staff.push({
+  const person = {
     id: `u_${Date.now().toString(36)}`,
     name: trimmed,
     role: role || 'waiter',
     email: address,
-    password: String(password),
     active: true,
-  })
+  }
+
+  if (chosen) person.password = chosen
+  // No password field at all rather than an empty one: signInWithEmail
+  // refuses an empty password before it ever reaches the comparison, so
+  // there is no value a stranger could send that would match.
+  else person.mustSetPassword = true
+
+  S().staff.push(person)
   emit('staff')
+
+  const invite = chosen ? null : issueReset(person, 'invite')
+  if (invite) emit('staff')
+
+  return { id: person.id, invite }
 }
 
 /**
@@ -759,8 +955,11 @@ export async function updateStaff(id, changes) {
   if (changes.password !== undefined) {
     // An empty box means "leave it alone", not "clear the password".
     if (!String(changes.password)) delete changes.password
-    else if (String(changes.password).length < 8) {
-      throw new Error('Password must be at least 8 characters.')
+    else {
+      const problem = passwordProblem(changes.password)
+      if (problem) throw new Error(problem)
+      // They have one now, so they are no longer waiting to choose one.
+      changes.mustSetPassword = false
     }
   }
 
@@ -775,6 +974,147 @@ export async function removeStaff(id) {
   if (person?.role === 'owner') throw new Error('The owner account cannot be removed.')
   S().staff = S().staff.filter((u) => u.id !== id)
   emit('staff')
+}
+
+// ---------------------------------------------------------------------------
+// Setting and resetting a password
+//
+// Firebase does all of this server-side: it mints a single-use code, mails it
+// out, and takes the new password itself, so the app never sees either. There
+// is no mail server here, so the link is handed straight back to the caller
+// to pass on — which is also what makes the whole flow walkable on demo data.
+//
+// The rules the real one enforces are kept, because they are the ones the
+// screens have to cope with: single use, time limited, and one live link per
+// person so an older copy of an email cannot be replayed.
+// ---------------------------------------------------------------------------
+
+const RESET_TTL_MINUTES = 60
+
+function resetToken() {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Mint a link for one person in one named restaurant, retiring any they
+ * already had.
+ *
+ * Takes the restaurant explicitly because the operator console creates an
+ * owner from the apex, where no tenant is active — asking for the active one
+ * there would file the token under Bobby's and leave the new owner holding a
+ * link nothing can redeem.
+ *
+ * Synchronous and internal: addStaff needs the invite in the same tick it
+ * creates the profile, so the owner is never shown a half-finished result.
+ */
+function issueResetIn(tenantId, person, purpose = 'reset') {
+  const target = storeFor(tenantId)
+  const token = resetToken()
+  const now = Date.now()
+
+  // One live link each. Two valid links means the older email still works
+  // after the newer one has been used, which is the replay this prevents.
+  target.state.resets = target.state.resets.filter((r) => r.staff_id !== person.id)
+  target.state.resets.push({
+    token,
+    staff_id: person.id,
+    email: person.email,
+    purpose,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + RESET_TTL_MINUTES * 60_000).toISOString(),
+    used_at: null,
+  })
+  persistResets(tenantId, target.state.resets)
+
+  return {
+    token,
+    purpose,
+    email: person.email,
+    name: person.name,
+    // Addressed to the restaurant the person belongs to, not to whatever
+    // page happens to be open. In dev that appends ?tenant=, which also
+    // makes the link survive a lost sessionStorage override.
+    link: tenantUrl(tenantId, `/reset?token=${token}`),
+    expires_in_minutes: RESET_TTL_MINUTES,
+  }
+}
+
+/** The common case: a link for someone in the restaurant already open. */
+function issueReset(person, purpose = 'reset') {
+  return issueResetIn(getActiveTenant() || 'bobbys', person, purpose)
+}
+
+/**
+ * Ask for a set-your-password link.
+ *
+ * Succeeds identically whether or not the address belongs to anyone, and the
+ * caller is told only `sent`. An honest "no such account here" would turn
+ * this box into a way to find out who works here, which is the one thing a
+ * sign-in screen must never answer. The link rides back only when there is
+ * someone to give it to, and the screens treat its absence as unremarkable.
+ */
+export async function sendPasswordReset(email) {
+  await wait(260)
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+
+  const person = S().staff.find((u) => normaliseEmail(u.email) === address)
+
+  // A switched-off account gets no link. Reinstating a leaver is the owner's
+  // decision, not something a former colleague can trigger from outside.
+  if (!person || person.active === false) return { sent: true, delivered: false }
+
+  const invite = issueReset(person, person.mustSetPassword ? 'invite' : 'reset')
+  return { sent: true, delivered: true, ...invite }
+}
+
+/** What a link is worth, before asking anyone to type a new password into it. */
+export async function checkResetToken(token) {
+  await wait(160)
+  const row = S().resets.find((r) => r.token === String(token ?? ''))
+  if (!row) return { valid: false, reason: 'unknown' }
+  if (row.used_at) return { valid: false, reason: 'used' }
+  if (Date.parse(row.expires_at) < Date.now()) return { valid: false, reason: 'expired' }
+
+  const person = S().staff.find((u) => u.id === row.staff_id)
+  if (!person || person.active === false) return { valid: false, reason: 'unknown' }
+
+  return { valid: true, email: person.email, name: person.name, purpose: row.purpose }
+}
+
+/** Redeem a link and set the password it was issued for. */
+export async function completePasswordReset(token, password) {
+  await wait(280)
+
+  const problem = passwordProblem(password)
+  if (problem) throw new Error(problem)
+
+  const row = S().resets.find((r) => r.token === String(token ?? ''))
+  if (!row) throw new Error('This link is not valid. Ask for a new one.')
+  if (row.used_at) throw new Error('This link has already been used. Ask for a new one.')
+  if (Date.parse(row.expires_at) < Date.now()) {
+    throw new Error('This link has expired. Ask for a new one.')
+  }
+
+  const person = S().staff.find((u) => u.id === row.staff_id)
+  if (!person || person.active === false) {
+    throw new Error('This account is no longer active. Speak to the owner.')
+  }
+
+  person.password = String(password)
+  person.mustSetPassword = false
+  row.used_at = new Date().toISOString()
+
+  const tenantId = getActiveTenant() || 'bobbys'
+  // Both of these outlive the page, because the next thing this person does
+  // is navigate to the sign-in screen — which is a page load.
+  persistResets(tenantId, S().resets)
+  rememberSeedPassword(tenantId, person)
+
+  emit('staff')
+  return { email: person.email, name: person.name }
 }
 
 /** Owner-only: grant or revoke one capability for one role. */
@@ -806,18 +1146,361 @@ export async function resetRolePermissions(role) {
  * The mock's `restaurants` collection. Anything not listed 404s, exactly as
  * an unknown subdomain will in Firestore.
  */
+const publicRecord = (id, tenant) => ({
+  id,
+  subdomain: id,
+  name: tenant.name,
+  tagline: tenant.tagline,
+  status: tenant.status,
+  categories: tenant.categories,
+  customDomain: tenant.customDomain ?? null,
+  currency: tenant.currency ?? 'GBP',
+})
+
 export async function lookupRestaurantBySlug(slug) {
   await wait(120)
   const wanted = String(slug || '').toLowerCase()
-  const found = TENANTS[wanted]
+  const found = tenantDef(wanted)
   if (!found) return null
-  return {
-    id: wanted,
-    subdomain: wanted,
-    name: found.name,
-    tagline: found.tagline,
-    status: found.status,
-    categories: found.categories,
-    currency: 'GBP',
+  return publicRecord(wanted, found)
+}
+
+/**
+ * Resolve a restaurant that has pointed its own domain at us.
+ *
+ * Separate from the slug lookup because a custom domain has no subdomain to
+ * read — the whole hostname is the key, and it has to be matched against a
+ * field rather than against a document id.
+ */
+export async function lookupRestaurantByHost(host) {
+  await wait(120)
+  const wanted = String(host || '')
+    .toLowerCase()
+    .replace(/^www\./, '')
+  if (!wanted) return null
+
+  for (const [id, tenant] of allTenantEntries()) {
+    const domain = String(tenant.customDomain ?? '')
+      .toLowerCase()
+      .replace(/^www\./, '')
+    if (domain && domain === wanted) return publicRecord(id, tenant)
   }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// The platform: our own console, not a restaurant's
+//
+// Everything below operates on a restaurant named by argument rather than on
+// the one currently open. That is the whole difference between this section
+// and the rest of the file: the operator console runs on the apex, where no
+// tenant is active, and it edits restaurants it is not inside.
+// ---------------------------------------------------------------------------
+
+/**
+ * The demo platform admin.
+ *
+ * Firestore checks a `platformAdmins/{uid}` document; with no project to
+ * check, the mock accepts one fixed credential. It is deliberately the only
+ * one, and deliberately not in any restaurant's staff list — a restaurant
+ * owner must never be able to sign in here.
+ */
+const DEMO_ADMIN = {
+  email: 'admin@happytable.co.uk',
+  password: 'admin1234',
+  name: 'Platform admin',
+}
+
+export async function signInPlatformAdmin(email, password) {
+  await wait(320)
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+
+  if (address !== DEMO_ADMIN.email || String(password ?? '') !== DEMO_ADMIN.password) {
+    // One message for both failures, for the same reason as staff sign-in:
+    // telling a stranger the address exists is telling them what to attack.
+    throw new Error('Email or password not recognised.')
+  }
+
+  return { uid: 'admin_demo', email: DEMO_ADMIN.email, name: DEMO_ADMIN.name }
+}
+
+/** Shown on the sign-in screen while the app runs on demo data. */
+export const DEMO_ADMIN_HINT = { email: DEMO_ADMIN.email, password: DEMO_ADMIN.password }
+
+// --- restaurants ------------------------------------------------------------
+
+const nextDishNo = (menu) =>
+  menu.reduce((highest, item) => Math.max(highest, Number(item.no) || 0), 0) + 1
+
+let dishCounter = 0
+const dishId = (prefix = 'd') => {
+  dishCounter += 1
+  return `${prefix}_${Date.now().toString(36)}${dishCounter.toString(36)}`
+}
+
+/** Normalise one dish from whatever the caller had to hand. */
+function normaliseDish(raw, fallbackNo) {
+  const name = String(raw.name ?? '').trim()
+  if (!name) throw new Error('Every dish needs a name.')
+
+  const price = Number(raw.price)
+  if (!Number.isFinite(price) || price < 0) {
+    throw new Error(`"${name}" needs a price.`)
+  }
+
+  // A number supplied with the dish is the one printed in the restaurant's
+  // menu book, and staff and guests say it out loud to each other. Keep it
+  // where there is one; only invent a number when there is not.
+  const supplied = Number(raw.no)
+  const no = Number.isInteger(supplied) && supplied > 0 ? supplied : fallbackNo
+
+  return {
+    id: raw.id ?? dishId(),
+    no,
+    name,
+    description: String(raw.description ?? '').trim(),
+    price,
+    category: raw.category || 'mains',
+    diet: raw.diet || 'veg',
+    nuts: Boolean(raw.nuts),
+    isNew: Boolean(raw.isNew),
+    weekend: Boolean(raw.weekend),
+    image_url: String(raw.image_url ?? '').trim(),
+  }
+}
+
+/**
+ * Create a restaurant, ready to take orders.
+ *
+ * A restaurant is not useful the moment its name is saved — it needs tables
+ * to seat people at, a permission matrix so roles mean something, and an
+ * owner who can sign in. All of that happens here in one call, because a
+ * half-provisioned restaurant is worse than none: it looks ready and then
+ * fails on the first thing anybody tries.
+ *
+ * The owner's password is optional on purpose. Leaving it blank issues a
+ * set-your-password link instead, so nobody at the platform ever knows a
+ * restaurant owner's password — the same rule the staff screens follow.
+ */
+export async function createRestaurant({
+  name,
+  subdomain,
+  tagline = '',
+  ownerEmail,
+  ownerPassword = '',
+  ownerName = '',
+  tablesCount = 20,
+  currency = 'GBP',
+  customDomain = '',
+  categories = [],
+  initialMenu = [],
+} = {}) {
+  await wait(420)
+
+  const trimmedName = String(name ?? '').trim()
+  if (!trimmedName) throw new Error('The restaurant needs a name.')
+
+  const slug = String(subdomain ?? '').toLowerCase().trim()
+  const slugIssue = slugProblem(slug)
+  if (slugIssue) throw new Error(slugIssue)
+  if (tenantDef(slug)) throw new Error(`"${slug}" is already taken.`)
+
+  const address = normaliseEmail(ownerEmail)
+  if (!isValidEmail(address)) throw new Error('Enter a valid owner email address.')
+
+  const chosen = String(ownerPassword ?? '')
+  if (chosen) {
+    const problem = passwordProblem(chosen)
+    if (problem) throw new Error(problem)
+  }
+
+  const tables = Math.min(Math.max(Number(tablesCount) || 20, 1), 200)
+
+  // Numbered from one, in the order given, so dish numbers match the printed
+  // menu from the first day rather than from the first edit.
+  let no = 1
+  const menu = (initialMenu ?? []).map((dish) => normaliseDish(dish, no++))
+
+  // Any category a dish actually uses has to exist, or that dish lands in a
+  // section the guest menu never renders.
+  const labelled = new Map(
+    (categories ?? []).map((category) => [category.id, category.label ?? category.id])
+  )
+  for (const dish of initialMenu ?? []) {
+    const id = dish.category || 'mains'
+    if (!labelled.has(id)) labelled.set(id, dish.categoryLabel || id)
+  }
+
+  const owner = {
+    id: 'u_owner',
+    name: String(ownerName ?? '').trim() || 'Owner',
+    role: 'owner',
+    email: address,
+    active: true,
+  }
+  if (chosen) owner.password = chosen
+  else owner.mustSetPassword = true
+
+  const record = {
+    name: trimmedName,
+    tagline: String(tagline ?? '').trim(),
+    status: 'active',
+    currency: currency || 'GBP',
+    customDomain: String(customDomain ?? '').toLowerCase().trim() || null,
+    ownerEmail: address,
+    createdAt: new Date().toISOString(),
+    categories: [...labelled].map(([id, label]) => ({ id, label })),
+    menu,
+    tablesCount: tables,
+    staffSeed: [owner],
+    soldOut: [],
+  }
+
+  extraTenants.set(slug, hydrateTenant(record))
+  saveRegistry()
+
+  // Build the store now rather than on first visit, so the console can read
+  // the menu back immediately and the owner's invite has somewhere to live.
+  // Any links persisted under this slug belong to an earlier demo that used
+  // the same name; they are not this restaurant's and must not be live.
+  persistResets(slug, [])
+  stores.delete(slug)
+  storeFor(slug)
+
+  const invite = chosen ? null : issueResetIn(slug, owner, 'invite')
+
+  return { id: slug, subdomain: slug, invite }
+}
+
+/**
+ * Change a restaurant's record — name, tagline, status, domain, owner email.
+ *
+ * Only the fields passed are touched, so a status change cannot accidentally
+ * blank a tagline.
+ */
+export async function updateRestaurant(restaurantId, changes = {}) {
+  await wait(220)
+  const target = tenantDef(restaurantId)
+  if (!target) throw new Error('That restaurant no longer exists.')
+
+  if (changes.name !== undefined) {
+    const value = String(changes.name).trim()
+    if (!value) throw new Error('The restaurant needs a name.')
+    target.name = value
+  }
+  if (changes.tagline !== undefined) target.tagline = String(changes.tagline).trim()
+  if (changes.status !== undefined) target.status = changes.status
+  if (changes.currency !== undefined) target.currency = changes.currency
+  if (changes.customDomain !== undefined) {
+    target.customDomain = String(changes.customDomain).toLowerCase().trim() || null
+  }
+  if (changes.ownerEmail !== undefined) {
+    const address = normaliseEmail(changes.ownerEmail)
+    if (!isValidEmail(address)) throw new Error('Enter a valid owner email address.')
+    target.ownerEmail = address
+  }
+
+  if (extraTenants.has(restaurantId)) saveRegistry()
+}
+
+// --- a named restaurant's menu ----------------------------------------------
+
+/** Read one restaurant's menu without opening it. */
+export async function fetchRestaurantMenu(restaurantId) {
+  await wait(200)
+  if (!tenantDef(restaurantId)) throw new Error('That restaurant no longer exists.')
+  return clone(storeFor(restaurantId).state.menu)
+}
+
+/**
+ * Teach a restaurant about a category its dishes are about to use.
+ *
+ * Takes effect for the guest menu on the next page load, because the
+ * category list rides on the restaurant record that TenantProvider reads
+ * once at the start. That is a fair trade for not re-resolving the tenant
+ * mid-service.
+ */
+function ensureCategories(restaurantId, additions = []) {
+  if (!additions.length) return
+  const tenant = tenantDef(restaurantId)
+  if (!tenant) return
+
+  const known = new Set((tenant.categories ?? []).map((category) => category.id))
+  const fresh = []
+  for (const category of additions) {
+    if (!category.id || known.has(category.id)) continue
+    known.add(category.id)
+    fresh.push({ id: category.id, label: category.label || category.id })
+  }
+  if (!fresh.length) return
+
+  tenant.categories = [...(tenant.categories ?? []), ...fresh]
+  if (extraTenants.has(restaurantId)) saveRegistry()
+}
+
+export async function addMenuItemToRestaurant(restaurantId, dish) {
+  await wait(220)
+  if (!tenantDef(restaurantId)) throw new Error('That restaurant no longer exists.')
+
+  const target = storeFor(restaurantId)
+  const created = normaliseDish(dish, nextDishNo(target.state.menu))
+
+  ensureCategories(restaurantId, [
+    { id: created.category, label: dish.categoryLabel || created.category },
+  ])
+
+  target.state.menu.push(created)
+  emitFor(restaurantId, 'menu')
+  return created.id
+}
+
+/**
+ * Commit a whole pasted menu at once.
+ *
+ * One call rather than a loop of single adds, so a paste of eighty dishes is
+ * one write and one re-render instead of eighty of each — and so a bad row
+ * part-way down cannot leave half a menu committed.
+ */
+export async function bulkAddMenuItems(restaurantId, dishes = []) {
+  await wait(380)
+  if (!tenantDef(restaurantId)) throw new Error('That restaurant no longer exists.')
+  if (!dishes.length) return { added: 0 }
+
+  const target = storeFor(restaurantId)
+  let no = nextDishNo(target.state.menu)
+
+  // Validate every row before writing any of them.
+  const prepared = dishes.map((dish) => normaliseDish(dish, no++))
+
+  ensureCategories(
+    restaurantId,
+    dishes.map((dish) => ({
+      id: dish.category || 'mains',
+      label: dish.categoryLabel || dish.category || 'mains',
+    }))
+  )
+
+  target.state.menu.push(...prepared)
+  emitFor(restaurantId, 'menu')
+  return { added: prepared.length }
+}
+
+export async function deleteMenuItemFromRestaurant(restaurantId, dishId) {
+  await wait(200)
+  if (!tenantDef(restaurantId)) throw new Error('That restaurant no longer exists.')
+
+  const target = storeFor(restaurantId)
+  const before = target.state.menu.length
+  target.state.menu = target.state.menu.filter((item) => item.id !== dishId)
+  if (target.state.menu.length === before) throw new Error('That dish has already gone.')
+
+  // A dish that no longer exists cannot be sold out. Leaving the id behind
+  // would keep a phantom entry on the 86 list forever.
+  if (target.state.soldOut.includes(dishId)) {
+    target.state.soldOut = target.state.soldOut.filter((id) => id !== dishId)
+    emitFor(restaurantId, 'inventory')
+  }
+
+  emitFor(restaurantId, 'menu')
 }

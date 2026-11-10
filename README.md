@@ -1,7 +1,10 @@
-# Bobby's &middot; Service
+# Happy Table
 
-Bobby's menu and ordering across three surfaces — guest phone, front-of-house tablet,
-kitchen display — on React (Vite) + Tailwind v4.
+Restaurant menu and ordering across three surfaces — guest phone, front-of-house
+tablet, kitchen display — sold to many restaurants at once. React (Vite) +
+Tailwind v4, Firebase Auth + Firestore, no server of our own.
+
+Official domain: **`happytable.co.uk`**.
 
 **Currently running on in-memory demo data. Firebase is wired but switched off.**
 
@@ -9,12 +12,47 @@ kitchen display — on React (Vite) + Tailwind v4.
 npm install && npm run dev
 ```
 
-| Route                | Device        | Job                                         |
-| -------------------- | ------------- | ------------------------------------------- |
-| `/customer/:tableId` | Guest's phone | QR scan → menu → cart → live order tracking  |
-| `/manager`           | Tablet        | Floor plan, seating, menu, billing           |
-| `/kitchen`           | Tablet        | Ticket rail, 86 list                         |
-| `/`                  | Any           | Dev switchboard (not used in service)        |
+## Two sets of routes, chosen by hostname
+
+The hostname is resolved in `src/tenant/resolve.js` before anything renders.
+It answers one of three ways, and that answer decides which router runs.
+
+### The platform — `happytable.co.uk`, `www.`, or plain `localhost`
+
+Served by `src/routes/platform/PlatformRoutes.jsx`. No restaurant exists on
+these addresses, so nothing here may assume one.
+
+| Route          | Who                | Job                                             |
+| -------------- | ------------------ | ----------------------------------------------- |
+| `/`            | Restaurant owners  | The marketing site, with live demo links         |
+| `/admin/login` | Us                 | Platform admin sign-in                           |
+| `/admin`       | Us                 | Operator console — create and manage restaurants |
+| `/reset`       | Any member of staff | Set a first password, or replace a lost one     |
+
+`/reset` answers here *and* on every restaurant, because Firebase allows
+exactly one password-reset action URL per project. The canonical one is
+`https://happytable.co.uk/reset`.
+
+### A restaurant — `bobbys.happytable.co.uk`, or its own domain
+
+| Route                | Device        | Job                                        |
+| -------------------- | ------------- | ------------------------------------------ |
+| `/`                  | Any           | The restaurant's front door                |
+| `/login`             | Any           | Staff sign-in                              |
+| `/reset`             | Any           | Set a first password, or replace a lost one |
+| `/customer/:tableId` | Guest's phone | QR scan → menu → cart → live order tracking |
+| `/manager`           | Tablet        | Floor plan, seating, menu, billing         |
+| `/kitchen`           | Tablet        | Ticket rail, 86 list                       |
+
+A restaurant that has pointed its own domain at us is matched on the whole
+hostname against `customDomain`, rather than on a subdomain label.
+
+### In development
+
+Subdomains of `localhost` work with no DNS setup
+(`http://bobbys.localhost:5180`), and where they do not resolve,
+`?tenant=bobbys` does the same job and is remembered for the session. Both are
+dev-only and compiled out of production.
 
 ---
 
@@ -99,9 +137,65 @@ already branches on `USE_MOCK` and collapses back to a single cached
 ## Staff sign-in & permissions
 
 Guests never sign in — they scan and order. Everything staff-facing sits
-behind a four-digit PIN keypad at `/login`. PIN rather than email and
-password because this is a shared tablet at a pass, operated with wet hands
-mid-service; it is what every till in the country uses, for that reason.
+behind email and password at `/login`, and inline on the front door at `/`.
+
+### Nobody else sets your password
+
+The owner creates the profile; the person sets their own password. The two
+halves meet at `/reset`, which is one screen doing one job for two arrivals:
+
+```
+owner, People screen          new starter / locked-out waiter
+  Add someone                   /login -> "Forgot your password?"
+  -> "They set their own"       or      -> "First time? Set your password"
+  -> link sent                           -> enter address, link sent
+                    \                   /
+                     -> /reset?token=... (or ?oobCode=... from Firebase)
+                     -> choose a password, twice
+                     -> sign in, address already filled in
+```
+
+A first password and a forgotten one are the same screen on purpose. A new
+starter should not have to work out that "forgot password" applies to a
+password they have never had.
+
+The owner can still type a temporary password — it is the second option on
+the form, for someone standing at the pass with no phone. It is second
+because a password the owner types is a password the owner has to say out
+loud across a kitchen.
+
+Three properties the screens depend on, enforced in both backends:
+
+- **One live link per person.** Issuing a new one retires the old, so an
+  older copy of an email cannot be replayed.
+- **Single use, one hour.** Checked before the form is shown, not after the
+  password has been typed twice.
+- **No account enumeration.** "Check your email" is worded and returned
+  identically whether or not the address belongs to anybody. A sign-in
+  screen that answers "does this person work here?" is a staff directory.
+
+On demo data there is no mail server, so the link is shown on screen instead
+of sent — that block is behind `USE_MOCK` and disappears with it.
+
+### What Firebase needs
+
+`sendPasswordResetEmail`, `verifyPasswordResetCode` and
+`confirmPasswordReset` do the work, so no password belonging to someone else
+ever passes through this app or the owner's hands. Two console settings:
+
+1. **Authentication → Templates → Password reset → customise action URL** →
+   `https://<your-domain>/reset`. Without this, Firebase's email points at
+   its own hosted page and the screen in this app is never reached. Both are
+   functional; only one is yours.
+2. **Re-deploy the rules.** `firestore.rules` gained a narrow `allow update`
+   letting a person clear their own `mustSetPassword` flag and nothing else.
+   Skipping it costs only a stale "Invited" badge on the owner's screen —
+   sign-in, resets and everything else work regardless.
+
+Inviting creates the Auth account with a CSPRNG password that is generated,
+used once and never returned, logged or displayed; the emailed link is the
+only way in.
+
 
 ### Capabilities, not screens
 
@@ -143,9 +237,14 @@ that survives the browser closing is a login nobody remembers to end.
 
 ### This is a design build, not security
 
-PINs are checked in the browser and the permission map is client-side. Anyone
-who can open DevTools can read both. That is fine for reviewing the design and
-**not** fine anywhere near a real till.
+On demo data, passwords are compared in the browser and the permission map is
+client-side. Anyone who can open DevTools can read both. That is fine for
+reviewing the design and **not** fine anywhere near a real till. The reset
+links are in memory too, so a reload forgets every one of them.
+
+Under Firebase none of that applies to passwords — Auth holds them, mints and
+redeems the reset codes, and this app never sees one. The permission map is
+still client-side.
 
 Before this goes live, sign-in and the permission map must move server-side —
 Firebase Auth with custom claims, enforced again in Firestore rules. The
@@ -232,7 +331,52 @@ top — that is the part a chef needs to see.
 
 ---
 
+## The operator console
+
+`/admin` on the apex, behind a platform-admin sign-in. On demo data the
+credential is `admin@happytable.co.uk` / `admin1234`, printed on the sign-in
+screen. With Firebase connected it authenticates against Firebase Auth and
+then checks `platformAdmins/{uid}` — a collection no client can write, which
+the security rules check again on every read. Authentication is not
+authorisation, and those are two separate steps on purpose.
+
+**Creating a restaurant provisions it completely** in one call: the record,
+every table numbered with standard seat counts, `config/inventory`,
+`config/access` seeded with the default permission matrix, the owner's
+account, and the menu. Half a restaurant is worse than none — it looks ready
+and then fails on the first thing anybody tries.
+
+The owner's password is optional and leaving it blank is the better path: the
+account is created with a CSPRNG string that is never returned, logged or
+shown, and the set-your-password email is the only way in. Nobody at the
+platform ever knows a restaurant owner's password.
+
+### Loading a menu
+
+The real cost of onboarding, so there are three ways in, all from the same
+screen:
+
+- **A starter template** — fifteen generic dishes in five sections, so every
+  screen is walkable from the first minute.
+- **Paste from a spreadsheet** — comma- or tab-separated, which is what the
+  clipboard carries out of Excel and Sheets. Quoted fields are respected, so
+  a description with a comma in it stays one field. `£`-prefixed prices parse.
+  Every row is previewed before anything is written, with bad rows named by
+  line number — a shunted column is the way this goes wrong, and it is silent
+  unless you show the parse.
+- **One at a time**, from the restaurant's Menu tab.
+
+New sections found in a paste are created automatically and listed before
+commit, so a typo makes a visible new section rather than an invisible one.
+
+---
+
 ## Demo data
+
+Three restaurants are seeded: **Bobby's** (171 dishes), **Star Vashnu Dhaba**
+(163 dishes, with photography) and **Feast India** (26 dishes, its own domain,
+and the only one serving meat — so it is the one that exercises
+`diet: 'non-veg'`).
 
 In-memory, seeded so every UI state is visible on load: two parties seated
 (one across linked tables 3 + 4), two walk-ins knocking, four tickets at
@@ -242,6 +386,15 @@ It syncs across browser tabs via `BroadcastChannel`, so you can put `/kitchen`
 and `/customer/3` side by side and watch one drive the other — the behaviour
 Firestore would give you. A reload resets the restaurant. "Simulate walk-in" in
 the manager header drops a new arrival onto the floor.
+
+Two things deliberately outlive a reload, because in Firestore they would:
+restaurants created from the operator console, and outstanding
+set-your-password links. Both sit in `localStorage`. Without the first, a
+restaurant created ten seconds ago would 404; without the second, clicking an
+invite link would destroy the token it carries, since clicking a link *is* a
+page load. Live service state — tables, sessions, orders — still resets.
+Clear them with `localStorage.removeItem('happytable-mock-restaurants')` and
+`…('happytable-mock-resets')`.
 
 **The dish photographs are Unsplash placeholders and several do not match
 their dish.** Swap them for real photography. Missing or broken images fall
@@ -257,16 +410,37 @@ src/
   data/index.js            ← THE SWAP POINT (USE_MOCK)
   data/firestoreAdapter.js    Firestore implementation (dormant)
   mock/store.js               in-memory store + BroadcastChannel sync
-  mock/data.js                seed menu, tables, sessions, orders
+  mock/data.js                seed menus, tables, staff for all three tenants
   firebase.js                 init + constants (only runs when configured)
-  lib/actions.js              every Firestore write, in one file
+
+  tenant/resolve.js        ← hostname -> platform | slug | custom domain
+  tenant/TenantProvider.jsx   the gate: resolves before any query runs
+  admin/                      platform-admin session + /admin guard
+
   lib/format.js               money, clocks, ticket urgency
+  lib/slug.js                 subdomain rules, shared by both backends
+  lib/menuImport.js           CSV/TSV menu parsing
+  lib/starterMenu.js          the template a new restaurant can start from
   hooks/                      useTables · useInventory · useMenu
                               useActiveOrders · useSessions · useTicker
   components/ui.jsx           the primitives
   index.css                   design tokens
+
+  routes/platform/            the apex router
+  routes/business/            the marketing site
+  routes/admin/               operator console: list, create, menu management
   routes/customer|manager|kitchen
 ```
+
+### Two kinds of data call
+
+Everything a restaurant's own screens do is scoped to the active tenant by
+`requireTenant()`. The operator console cannot use any of it — it runs on the
+apex, where no tenant is resolved, and it edits restaurants it is not inside.
+So the platform section of each adapter names its restaurant in an argument
+instead: `createRestaurant`, `fetchRestaurantMenu`,
+`addMenuItemToRestaurant`, `bulkAddMenuItems`,
+`deleteMenuItemFromRestaurant`, `updateRestaurant`.
 
 ### The unsubscribe rule survived the rewrite
 

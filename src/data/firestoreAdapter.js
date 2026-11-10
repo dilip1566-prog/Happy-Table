@@ -22,17 +22,23 @@
  */
 import { deleteApp, initializeApp } from 'firebase/app'
 import {
+  confirmPasswordReset,
   createUserWithEmailAndPassword,
   getAuth,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
+  verifyPasswordResetCode,
 } from 'firebase/auth'
 import { isValidEmail, normaliseEmail } from '../lib/validate'
+import { PASSWORD_MIN, passwordProblem, randomPassword } from '../lib/passwords'
+import { slugProblem } from '../lib/slug'
 import {
   addDoc,
   arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -599,12 +605,104 @@ export async function signInWithEmail(email, password) {
   }
 
   const data = snap.data()
+
+  // They are in, so they are no longer waiting to choose a password. Firebase
+  // completes a reset without telling the app, so first sign-in is the only
+  // moment this is knowable. Best-effort: the security rules let only an
+  // owner write a staff document, so for everyone else the flag stays until
+  // an owner opens the People screen. A stale badge is a cosmetic problem;
+  // letting a waiter write to their own staff record would not be.
+  if (data.mustSetPassword) {
+    updateDoc(snap.ref, { mustSetPassword: false }).catch(() => {})
+  }
+
   return {
     id: uid,
     name: data.name,
     email: data.email ?? address,
     role: data.role,
     active: true,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Setting and resetting a password
+//
+// All three of these are Firebase Auth's own, which is the point: the code is
+// minted, mailed, verified and redeemed server-side, so neither this app nor
+// the restaurant's owner ever handles a password belonging to someone else.
+//
+// By default Firebase's email points at its own hosted page and /reset is
+// never reached. To use the screen in this app instead, set the action URL in
+// the console: Authentication -> Templates -> Password reset -> edit ->
+// customise action URL -> https://<your-domain>/reset. Firebase then appends
+// ?mode=resetPassword&oobCode=..., which is what ResetPassword reads.
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask Firebase to mail a set-your-password link.
+ *
+ * Reports success whether or not the address is registered. Firebase behaves
+ * this way itself when email enumeration protection is on; the catch below
+ * matches it when it is off, so a sign-in screen can never be used to work
+ * out who has an account.
+ */
+export async function sendPasswordReset(email) {
+  if (!auth) throw new Error('Firebase is not configured.')
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+
+  try {
+    await sendPasswordResetEmail(auth, address)
+    return { sent: true, delivered: true, email: address }
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
+      return { sent: true, delivered: false, email: address }
+    }
+    if (error?.code === 'auth/too-many-requests') {
+      throw new Error('Too many attempts just now. Wait a minute and try again.')
+    }
+    throw error
+  }
+}
+
+/** What a link is worth, before asking anyone to type a new password into it. */
+export async function checkResetToken(code) {
+  if (!auth) throw new Error('Firebase is not configured.')
+  try {
+    const email = await verifyPasswordResetCode(auth, String(code ?? ''))
+    return { valid: true, email, purpose: 'reset' }
+  } catch (error) {
+    if (error?.code === 'auth/expired-action-code') return { valid: false, reason: 'expired' }
+    return { valid: false, reason: 'unknown' }
+  }
+}
+
+/** Redeem a link and set the password it was issued for. */
+export async function completePasswordReset(code, password) {
+  if (!auth) throw new Error('Firebase is not configured.')
+
+  const problem = passwordProblem(password)
+  if (problem) throw new Error(problem)
+
+  try {
+    // Returns the address rather than a session: Firebase deliberately does
+    // not sign anyone in off the back of a reset, so the screen hands them to
+    // the sign-in form afterwards.
+    const email = await checkResetToken(code)
+    await confirmPasswordReset(auth, String(code), String(password))
+    return { email: email.valid ? email.email : null }
+  } catch (error) {
+    if (error?.code === 'auth/expired-action-code') {
+      throw new Error('This link has expired. Ask for a new one.')
+    }
+    if (error?.code === 'auth/invalid-action-code') {
+      throw new Error('This link has already been used, or is not valid. Ask for a new one.')
+    }
+    if (error?.code === 'auth/weak-password') {
+      throw new Error(`Use at least ${PASSWORD_MIN} characters.`)
+    }
+    throw error
   }
 }
 
@@ -635,9 +733,17 @@ export async function addStaff({ name, role, email, password }) {
 
   const address = normaliseEmail(email)
   if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
-  if (String(password ?? '').length < 8) {
-    throw new Error('Password must be at least 8 characters.')
+
+  // No password means invite them instead. Firebase Auth has no account
+  // without one, so the account is created with a CSPRNG string that is
+  // generated, used once and dropped — it is never returned, logged or
+  // shown, and the set-your-password email that follows is the only way in.
+  const invited = !String(password ?? '')
+  if (!invited) {
+    const problem = passwordProblem(password)
+    if (problem) throw new Error(problem)
   }
+  const initial = invited ? randomPassword() : String(password)
 
   const restaurantId = requireTenant()
   const secondary = initializeApp(firebaseConfig, `staff-signup-${Date.now()}`)
@@ -647,7 +753,7 @@ export async function addStaff({ name, role, email, password }) {
     const credential = await createUserWithEmailAndPassword(
       getAuth(secondary),
       address,
-      String(password)
+      initial
     )
     uid = credential.user.uid
   } catch (error) {
@@ -655,7 +761,7 @@ export async function addStaff({ name, role, email, password }) {
       throw new Error('That email address already has an account.')
     }
     if (error?.code === 'auth/weak-password') {
-      throw new Error('Password must be at least 8 characters.')
+      throw new Error(`Password must be at least ${PASSWORD_MIN} characters.`)
     }
     throw error
   } finally {
@@ -668,8 +774,26 @@ export async function addStaff({ name, role, email, password }) {
     role: role || 'waiter',
     isActive: true,
     restaurantId,
+    // Recorded so the owner's screen can show who is still waiting to choose
+    // a password. Cleared on first successful sign-in, not on the reset
+    // itself — Firebase completes that without telling the app.
+    mustSetPassword: invited,
   })
-  return uid
+
+  if (!invited) return { id: uid, invite: null }
+
+  // The account exists either way. If the mail fails, say so rather than
+  // reporting a clean invite nobody received — the owner has a Send link
+  // again button on the person's card for exactly this.
+  try {
+    await sendPasswordResetEmail(auth, address)
+    return { id: uid, invite: { email: address, name: trimmed, delivered: true } }
+  } catch (error) {
+    return {
+      id: uid,
+      invite: { email: address, name: trimmed, delivered: false, reason: error?.code ?? null },
+    }
+  }
 }
 
 export async function updateStaff(id, changes) {
@@ -751,3 +875,460 @@ export async function resetRolePermissions(role) {
   })
 }
 
+
+// ---------------------------------------------------------------------------
+// The platform: our own console, not a restaurant's
+//
+// Everything below names its restaurant in an argument instead of reading
+// the active tenant, because the operator console runs on the apex where no
+// tenant is resolved — `requireTenant()` would throw, and rightly so.
+//
+// These paths are reachable only by a platform admin. The security rules
+// enforce that independently of this file: see firestore.rules, where
+// isPlatformAdmin() is the only grant that spans restaurants.
+// ---------------------------------------------------------------------------
+
+const rootOf = (rid) => doc(db, 'restaurants', String(rid))
+const colOf = (rid, name) => collection(rootOf(rid), name)
+
+/** Firestore's hard limit is 500 writes per batch; leave headroom. */
+const BATCH_LIMIT = 400
+
+/** Commit an array of {ref, data} in as many batches as it takes. */
+async function commitAll(writes) {
+  for (let i = 0; i < writes.length; i += BATCH_LIMIT) {
+    const batch = writeBatch(db)
+    for (const write of writes.slice(i, i + BATCH_LIMIT)) {
+      batch.set(write.ref, write.data, write.merge ? { merge: true } : undefined)
+    }
+    await batch.commit()
+  }
+}
+
+/**
+ * Sign in to the operator console.
+ *
+ * Two steps, and the second is the one that matters: Firebase Auth proves
+ * who they are, and `platformAdmins/{uid}` decides whether that person runs
+ * the platform. Authentication is not authorisation, and this is the seam
+ * where conflating the two would hand the console to any restaurant owner
+ * with an account.
+ *
+ * The document is not writable by any client (firestore.rules), so the only
+ * way into this collection is the console or a service account.
+ */
+export async function signInPlatformAdmin(email, password) {
+  if (!auth) throw new Error('Firebase is not configured.')
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid email address.')
+
+  let credential
+  try {
+    credential = await signInWithEmailAndPassword(auth, address, String(password ?? ''))
+  } catch {
+    throw new Error('Email or password not recognised.')
+  }
+
+  const uid = credential.user.uid
+  const snap = await getDoc(doc(db, 'platformAdmins', uid))
+  if (!snap.exists()) {
+    // Signed in, but not one of us. Sign straight back out so a half-valid
+    // session cannot sit in the tab waiting to be mistaken for access.
+    await signOut(auth)
+    throw new Error('That account does not have platform access.')
+  }
+
+  return {
+    uid,
+    email: credential.user.email ?? address,
+    name: snap.data()?.name ?? 'Platform admin',
+  }
+}
+
+export async function signOutPlatformAdmin() {
+  if (auth) await signOut(auth).catch(() => {})
+}
+
+// --- restaurants ------------------------------------------------------------
+
+/**
+ * Resolve a restaurant that has pointed its own domain at us.
+ *
+ * Matched on a field rather than a document id, because a custom domain has
+ * no subdomain label to read. `www.` is stripped from both sides so a
+ * restaurant does not have to store two rows for one domain.
+ */
+export async function lookupRestaurantByHost(host) {
+  const wanted = String(host || '')
+    .toLowerCase()
+    .replace(/^www\./, '')
+  if (!wanted) return null
+
+  const q = query(collection(db, 'restaurants'), where('customDomain', '==', wanted), limit(1))
+  const snap = await getDocs(q)
+  if (snap.empty) return null
+  const found = snap.docs[0]
+  return { id: found.id, ...found.data() }
+}
+
+const standardSeats = (index, total) => (index < 4 ? 2 : index < total - 2 ? 4 : 6)
+
+/** Shape one dish for storage, whatever the caller had to hand. */
+function dishDoc(raw, fallbackNo) {
+  const name = String(raw.name ?? '').trim()
+  if (!name) throw new Error('Every dish needs a name.')
+
+  const price = Number(raw.price)
+  if (!Number.isFinite(price) || price < 0) throw new Error(`“${name}” needs a price.`)
+
+  // A number supplied with the dish is the one printed in the restaurant's
+  // menu book, and staff and guests say it out loud to each other. Keep it
+  // where there is one; only invent a number when there is not.
+  const supplied = Number(raw.no)
+
+  return {
+    no: Number.isInteger(supplied) && supplied > 0 ? supplied : fallbackNo,
+    name,
+    description: String(raw.description ?? '').trim(),
+    price,
+    category: raw.category || 'mains',
+    diet: raw.diet || 'veg',
+    nuts: Boolean(raw.nuts),
+    isNew: Boolean(raw.isNew),
+    weekend: Boolean(raw.weekend),
+    image_url: String(raw.image_url ?? '').trim(),
+  }
+}
+
+/**
+ * Give a restaurant its owner.
+ *
+ * Split out of createRestaurant so it can be retried on its own. Creating
+ * the Firestore structure is re-runnable — every document id is derived from
+ * the slug — but creating an Auth account is not: a second attempt hits
+ * email-already-in-use and there is no way to recover the uid without the
+ * Admin SDK. Keeping this separate means a failed owner step costs one
+ * button press, not a dead restaurant.
+ *
+ * The password is optional, and leaving it blank is the better path: the
+ * account is created with a CSPRNG string that is never returned, logged or
+ * shown, and the set-your-password email is the only way in. Nobody at the
+ * platform ever knows a restaurant owner's password.
+ */
+export async function assignRestaurantOwner(
+  restaurantId,
+  { name = 'Owner', email, password = '' } = {}
+) {
+  if (!auth) throw new Error('Firebase is not configured.')
+
+  const address = normaliseEmail(email)
+  if (!isValidEmail(address)) throw new Error('Enter a valid owner email address.')
+
+  const invited = !String(password ?? '')
+  if (!invited) {
+    const problem = passwordProblem(password)
+    if (problem) throw new Error(problem)
+  }
+  const initial = invited ? randomPassword() : String(password)
+
+  // A second Firebase app, so creating this account does not replace the
+  // admin's own session — exactly the trick addStaff uses, and the reason
+  // the platform needs no Cloud Function.
+  const secondary = initializeApp(firebaseConfig, `owner-signup-${Date.now()}`)
+
+  let uid
+  try {
+    const credential = await createUserWithEmailAndPassword(getAuth(secondary), address, initial)
+    uid = credential.user.uid
+  } catch (error) {
+    if (error?.code === 'auth/email-already-in-use') {
+      throw new Error(
+        'That email address already has an account. Add them from the restaurant’s own People screen instead.'
+      )
+    }
+    if (error?.code === 'auth/weak-password') {
+      throw new Error(`Password must be at least ${PASSWORD_MIN} characters.`)
+    }
+    throw error
+  } finally {
+    await deleteApp(secondary).catch(() => {})
+  }
+
+  await setDoc(doc(rootOf(restaurantId), 'staff', uid), {
+    name: String(name ?? '').trim() || 'Owner',
+    email: address,
+    role: 'owner',
+    isActive: true,
+    restaurantId: String(restaurantId),
+    mustSetPassword: invited,
+  })
+
+  if (!invited) return { uid, invite: null }
+
+  try {
+    await sendPasswordResetEmail(auth, address)
+    return { uid, invite: { email: address, name, delivered: true } }
+  } catch (error) {
+    // The account exists either way. Say the mail failed rather than report
+    // a clean invite nobody received.
+    return {
+      uid,
+      invite: { email: address, name, delivered: false, reason: error?.code ?? null },
+    }
+  }
+}
+
+/**
+ * Create a restaurant, ready to take orders.
+ *
+ * A restaurant is not useful the moment its name is saved — it needs tables
+ * to seat people at, an inventory document the guest menu can read, and a
+ * permission matrix so roles mean anything. All of it is written here,
+ * because a half-provisioned restaurant is worse than none: it looks ready
+ * and then fails on the first thing anybody tries.
+ *
+ * The slug is the document id rather than just a field, so two restaurants
+ * cannot hold the same subdomain however the writes interleave — the path
+ * itself is the uniqueness constraint.
+ */
+export async function createRestaurant({
+  name,
+  subdomain,
+  tagline = '',
+  ownerEmail,
+  ownerPassword = '',
+  ownerName = '',
+  tablesCount = 20,
+  currency = 'GBP',
+  customDomain = '',
+  categories = [],
+  initialMenu = [],
+} = {}) {
+  if (!db) throw new Error('Firebase is not configured.')
+
+  const trimmedName = String(name ?? '').trim()
+  if (!trimmedName) throw new Error('The restaurant needs a name.')
+
+  const slug = String(subdomain ?? '')
+    .toLowerCase()
+    .trim()
+  const slugIssue = slugProblem(slug)
+  if (slugIssue) throw new Error(slugIssue)
+
+  const address = normaliseEmail(ownerEmail)
+  if (!isValidEmail(address)) throw new Error('Enter a valid owner email address.')
+
+  const existing = await getDoc(rootOf(slug))
+  if (existing.exists()) throw new Error(`“${slug}” is already taken.`)
+
+  const tables = Math.min(Math.max(Number(tablesCount) || 20, 1), 200)
+
+  // Numbered from one, in the order given, so dish numbers match the printed
+  // menu from the first day rather than from the first edit.
+  let no = 1
+  const dishes = (initialMenu ?? []).map((dish) => dishDoc(dish, no++))
+
+  // Any category a dish uses has to exist on the record, or that dish lands
+  // in a section the guest menu never renders.
+  const labelled = new Map(
+    (categories ?? []).map((category) => [category.id, category.label ?? category.id])
+  )
+  for (const dish of initialMenu ?? []) {
+    const id = dish.category || 'mains'
+    if (!labelled.has(id)) labelled.set(id, dish.categoryLabel || id)
+  }
+
+  const writes = [
+    {
+      ref: rootOf(slug),
+      data: {
+        name: trimmedName,
+        subdomain: slug,
+        tagline: String(tagline ?? '').trim(),
+        status: 'active',
+        currency: currency || 'GBP',
+        customDomain:
+          String(customDomain ?? '')
+            .toLowerCase()
+            .trim() || null,
+        categories: [...labelled].map(([id, label]) => ({ id, label })),
+        createdAt: serverTimestamp(),
+      },
+    },
+    { ref: doc(rootOf(slug), 'config', 'inventory'), data: { sold_out_items: [] } },
+    {
+      ref: doc(rootOf(slug), 'config', 'access'),
+      data: { rolePermissions: DEFAULT_ROLE_PERMISSIONS },
+    },
+  ]
+
+  for (let index = 0; index < tables; index += 1) {
+    const number = index + 1
+    writes.push({
+      ref: doc(rootOf(slug), 'tables', String(number)),
+      data: {
+        table_number: number,
+        status: 'available',
+        session_id: null,
+        seats: standardSeats(index, tables),
+      },
+    })
+  }
+
+  for (const dish of dishes) {
+    writes.push({ ref: doc(colOf(slug, 'menuItems')), data: dish })
+  }
+
+  await commitAll(writes)
+
+  // The structure is in place and re-runnable; the owner's account is the
+  // one step that is not, so it goes last and reports its own failure.
+  let invite = null
+  try {
+    const assigned = await assignRestaurantOwner(slug, {
+      name: ownerName,
+      email: address,
+      password: ownerPassword,
+    })
+    invite = assigned.invite
+  } catch (error) {
+    // Named precisely, because the restaurant DID get created and a message
+    // that just says "failed" sends someone off to create it a second time.
+    throw new Error(
+      `${trimmedName} was created and is listed, but the owner account was not: ` +
+        `${error.message} Add them from the restaurant’s own People screen.`
+    )
+  }
+
+  return { id: slug, subdomain: slug, invite }
+}
+
+/**
+ * Change a restaurant's record — name, tagline, status, domain.
+ *
+ * Merged rather than replaced, so a status change cannot blank a tagline.
+ * Note what is NOT here: the subdomain. It is the document id and the
+ * address on every printed QR code, so changing it is a migration, not an
+ * edit.
+ */
+export async function updateRestaurant(restaurantId, changes = {}) {
+  if (!db) throw new Error('Firebase is not configured.')
+
+  const patch = {}
+  if (changes.name !== undefined) {
+    const value = String(changes.name).trim()
+    if (!value) throw new Error('The restaurant needs a name.')
+    patch.name = value
+  }
+  if (changes.tagline !== undefined) patch.tagline = String(changes.tagline).trim()
+  if (changes.status !== undefined) patch.status = changes.status
+  if (changes.currency !== undefined) patch.currency = changes.currency
+  if (changes.customDomain !== undefined) {
+    patch.customDomain =
+      String(changes.customDomain)
+        .toLowerCase()
+        .trim() || null
+  }
+  if (!Object.keys(patch).length) return
+
+  await setDoc(rootOf(restaurantId), patch, { merge: true })
+}
+
+// --- a named restaurant's menu ----------------------------------------------
+
+/** Read one restaurant's menu without opening it. */
+export async function fetchRestaurantMenu(restaurantId) {
+  if (!db) throw new Error('Firebase is not configured.')
+  const snap = await getDocs(query(colOf(restaurantId, 'menuItems'), orderBy('no')))
+  return rows(snap)
+}
+
+/**
+ * Teach a restaurant about a category its dishes are about to use.
+ *
+ * Read-merge-write rather than arrayUnion, because these are objects and
+ * arrayUnion dedupes by deep equality — the same id with a different label
+ * would be appended as a second section with the same slug.
+ */
+async function ensureCategories(restaurantId, additions = []) {
+  if (!additions.length) return
+
+  const ref = rootOf(restaurantId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('That restaurant no longer exists.')
+
+  const current = Array.isArray(snap.data().categories) ? snap.data().categories : []
+  const known = new Set(current.map((category) => category.id))
+  const fresh = []
+  for (const category of additions) {
+    if (!category.id || known.has(category.id)) continue
+    known.add(category.id)
+    fresh.push({ id: category.id, label: category.label || category.id })
+  }
+  if (!fresh.length) return
+
+  await setDoc(ref, { categories: [...current, ...fresh] }, { merge: true })
+}
+
+/** The next printed dish number: one past the highest in use, never reused. */
+async function nextDishNo(restaurantId) {
+  const snap = await getDocs(query(colOf(restaurantId, 'menuItems'), orderBy('no', 'desc'), limit(1)))
+  return snap.empty ? 1 : (snap.docs[0].data().no ?? 0) + 1
+}
+
+export async function addMenuItemToRestaurant(restaurantId, dish) {
+  if (!db) throw new Error('Firebase is not configured.')
+
+  const prepared = dishDoc(dish, await nextDishNo(restaurantId))
+  await ensureCategories(restaurantId, [
+    { id: prepared.category, label: dish.categoryLabel || prepared.category },
+  ])
+
+  const ref = await addDoc(colOf(restaurantId, 'menuItems'), prepared)
+  return ref.id
+}
+
+/**
+ * Commit a whole pasted menu at once.
+ *
+ * Batched, so eighty dishes are a handful of round trips rather than eighty —
+ * and so a bad row part-way down fails before anything is written instead of
+ * leaving half a menu committed.
+ */
+export async function bulkAddMenuItems(restaurantId, dishes = []) {
+  if (!db) throw new Error('Firebase is not configured.')
+  if (!dishes.length) return { added: 0 }
+
+  let no = await nextDishNo(restaurantId)
+  // Validate every row before writing any of them.
+  const prepared = dishes.map((dish) => dishDoc(dish, no++))
+
+  await ensureCategories(
+    restaurantId,
+    dishes.map((dish) => ({
+      id: dish.category || 'mains',
+      label: dish.categoryLabel || dish.category || 'mains',
+    }))
+  )
+
+  await commitAll(
+    prepared.map((dish) => ({ ref: doc(colOf(restaurantId, 'menuItems')), data: dish }))
+  )
+
+  return { added: prepared.length }
+}
+
+export async function deleteMenuItemFromRestaurant(restaurantId, dishId) {
+  if (!db) throw new Error('Firebase is not configured.')
+
+  await deleteDoc(doc(rootOf(restaurantId), 'menuItems', String(dishId)))
+
+  // A dish that no longer exists cannot be sold out. Leaving the id behind
+  // would keep a phantom entry on the 86 list forever. Best-effort: the
+  // dish is already gone, and failing here would misreport that.
+  await setDoc(
+    doc(rootOf(restaurantId), 'config', 'inventory'),
+    { sold_out_items: arrayRemove(String(dishId)) },
+    { merge: true }
+  ).catch(() => {})
+}

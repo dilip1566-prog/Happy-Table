@@ -3,6 +3,7 @@ import {
   addStaff,
   removeStaff,
   resetRolePermissions,
+  sendPasswordReset,
   setRolePermission,
   subscribe,
   updateStaff,
@@ -25,6 +26,8 @@ import {
   Switch,
   inputClass,
 } from '../../components/ui'
+import { CopyableLink } from '../../components/CopyableLink'
+import { PASSWORD_MIN } from '../../lib/passwords'
 
 /**
  * Owner-only: who works here, and what each role may do.
@@ -268,15 +271,44 @@ function StackedMatrix({ access, busy, onToggle }) {
 
 const BLANK = { name: '', role: 'waiter', email: '', password: '' }
 
+/**
+ * Hiring, in the order it actually happens.
+ *
+ * The owner creates the profile — name, role, address — and the new starter
+ * chooses their own password from a link. The owner is never asked to invent
+ * one, which matters for a reason that is not really about cryptography: a
+ * password the owner types is a password the owner has to communicate, and
+ * across a kitchen that means saying it out loud or writing it down by the
+ * till. Both end with four people knowing one waiter's password.
+ *
+ * Typing one by hand is still here, because a new starter stood at the pass
+ * with no phone signal is a real Tuesday, and refusing to help them is not
+ * better security. It is the second option rather than the only one.
+ */
 function People({ staff, currentUserId, onError }) {
   const [form, setForm] = useState(BLANK)
+  const [mode, setMode] = useState('invite') // 'invite' | 'password'
   const [saving, setSaving] = useState(false)
+  const [added, setAdded] = useState(null)
+
+  const reset = () => {
+    setForm(BLANK)
+    setMode('invite')
+    setAdded(null)
+  }
 
   const submit = async (event) => {
     event.preventDefault()
     setSaving(true)
     try {
-      await addStaff(form)
+      // An empty password is the instruction to invite. Sending the box's
+      // contents when it is hidden would create an account with whatever was
+      // typed before the owner switched modes.
+      const result = await addStaff({
+        ...form,
+        password: mode === 'password' ? form.password : '',
+      })
+      setAdded({ name: form.name.trim(), email: form.email.trim(), mode, result })
       setForm(BLANK)
     } catch (err) {
       onError(err)
@@ -291,64 +323,95 @@ function People({ staff, currentUserId, onError }) {
         <SectionTitle hint="They sign in with this email address">
           Add someone
         </SectionTitle>
-        <Card className="p-5">
-          <form onSubmit={submit} className="space-y-4">
-            <Field label="Name">
-              <input
-                required
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Priya"
-                className={inputClass}
-              />
-            </Field>
 
-            <Field label="Role">
-              <select
-                value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                className={inputClass}
-              >
-                {ROLES.filter((r) => r.id !== 'owner').map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label} — {r.blurb}
-                  </option>
-                ))}
-              </select>
-            </Field>
+        {added ? (
+          <AddedPanel added={added} onAgain={reset} />
+        ) : (
+          <Card className="p-5">
+            <form onSubmit={submit} className="space-y-4">
+              <Field label="Name">
+                <input
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Priya"
+                  className={inputClass}
+                />
+              </Field>
 
-            <Field label="Email" hint="Must be a working address — it is their sign-in">
-              <input
-                required
-                type="email"
-                inputMode="email"
-                autoCapitalize="none"
-                spellCheck="false"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                placeholder="priya@restaurant.co.uk"
-                className={inputClass}
-              />
-            </Field>
+              <Field label="Role">
+                <select
+                  value={form.role}
+                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+                  className={inputClass}
+                >
+                  {ROLES.filter((r) => r.id !== 'owner').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label} — {r.blurb}
+                    </option>
+                  ))}
+                </select>
+              </Field>
 
-            <Field label="Password" hint="At least 8 characters">
-              <input
-                required
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="••••••••"
-                className={inputClass}
-              />
-            </Field>
+              <Field label="Email" hint="Must be a working address — it is their sign-in">
+                <input
+                  required
+                  type="email"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  spellCheck="false"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="priya@restaurant.co.uk"
+                  className={inputClass}
+                />
+              </Field>
 
-            <Button type="submit" full size="lg" disabled={saving}>
-              {saving ? 'Adding…' : 'Add to the team'}
-            </Button>
-          </form>
-        </Card>
+              <fieldset className="space-y-2">
+                <legend className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+                  Their password
+                </legend>
+
+                <Choice
+                  checked={mode === 'invite'}
+                  onChange={() => setMode('invite')}
+                  title="They set their own"
+                  blurb="Sends a link to choose a password. Nobody else ever knows it."
+                  recommended
+                />
+                <Choice
+                  checked={mode === 'password'}
+                  onChange={() => setMode('password')}
+                  title="I'll set a temporary one"
+                  blurb="For someone standing here with no phone. Ask them to change it."
+                />
+              </fieldset>
+
+              {mode === 'password' && (
+                <Field label="Temporary password" hint={`At least ${PASSWORD_MIN} characters`}>
+                  <input
+                    required
+                    type="password"
+                    minLength={PASSWORD_MIN}
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                    placeholder="••••••••"
+                    className={inputClass}
+                  />
+                </Field>
+              )}
+
+              <Button type="submit" full size="lg" disabled={saving}>
+                {saving
+                  ? 'Adding…'
+                  : mode === 'invite'
+                    ? 'Add & send invite'
+                    : 'Add to the team'}
+              </Button>
+            </form>
+          </Card>
+        )}
       </div>
 
       <div>
@@ -367,6 +430,89 @@ function People({ staff, currentUserId, onError }) {
         </div>
       </div>
     </section>
+  )
+}
+
+/** One of two ways to give somebody a password, as a real radio. */
+function Choice({ checked, onChange, title, blurb, recommended }) {
+  return (
+    <label
+      className={`flex cursor-pointer gap-3 rounded-control border p-3 transition-colors ${
+        checked ? 'border-accent bg-accent-wash' : 'border-line bg-sunken hover:border-line-strong'
+      }`}
+    >
+      <input
+        type="radio"
+        name="password-mode"
+        checked={checked}
+        onChange={onChange}
+        className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
+      />
+      <span className="min-w-0">
+        <span className="flex items-center gap-2 text-[14px] font-semibold">
+          {title}
+          {recommended && (
+            <span className="rounded-pill bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-accent">
+              Better
+            </span>
+          )}
+        </span>
+        <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-faint">{blurb}</span>
+      </span>
+    </label>
+  )
+}
+
+/**
+ * What happened, and what the owner has to do next.
+ *
+ * Replaces the form rather than sitting under it, because there is exactly
+ * one thing worth doing at this moment — passing the link on — and a form
+ * underneath invites adding the same person twice.
+ */
+function AddedPanel({ added, onAgain }) {
+  const invite = added.result?.invite
+
+  return (
+    <Card className="p-5">
+      <p className="text-[15px] font-semibold text-state-ready">
+        {added.name} is on the team
+      </p>
+
+      {added.mode === 'password' ? (
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
+          Tell them the password you just set, and ask them to change it from{' '}
+          <span className="font-semibold text-ink">Forgot your password?</span> on the
+          sign-in screen. Until they do, it is a password you both know.
+        </p>
+      ) : invite?.link ? (
+        <>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
+            Demo data has no mail server, so here is the link that would have been sent
+            to <span className="font-semibold text-ink">{added.email}</span>. Give it to
+            them and they choose their own password.
+          </p>
+          <CopyableLink link={invite.link} />
+          <p className="mt-2 text-[12px] text-ink-faint">
+            Good for one hour, and it works once.
+          </p>
+        </>
+      ) : invite?.delivered ? (
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
+          An invite is on its way to{' '}
+          <span className="font-semibold text-ink">{added.email}</span>. They have an
+          hour to set a password, and can ask for a fresh link any time after that.
+        </p>
+      ) : (
+        <Banner tone="bad">
+          {`${added.name} was added, but the invite email could not be sent. Use “Send a set-password link” on their card to try again.`}
+        </Banner>
+      )}
+
+      <Button variant="secondary" full className="mt-4" onClick={onAgain}>
+        Add someone else
+      </Button>
+    </Card>
   )
 }
 
@@ -477,56 +623,125 @@ function PersonCard({ person, isMe, onError }) {
   }
 
   return (
-    <Card className="flex items-center gap-3 p-4">
-      <span className="grid size-11 shrink-0 place-items-center rounded-full bg-raised font-display text-[19px] text-ink-soft">
-        {person.name.charAt(0)}
-      </span>
+    <Card className="p-4">
+      <div className="flex items-center gap-3">
+        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-raised font-display text-[19px] text-ink-soft">
+          {person.name.charAt(0)}
+        </span>
 
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate text-[15px] font-semibold">
-          {person.name}
-          {isMe && (
-            <span className="rounded-pill bg-accent-wash px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-accent">
-              You
-            </span>
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 truncate text-[15px] font-semibold">
+            {person.name}
+            {isMe && (
+              <span className="rounded-pill bg-accent-wash px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-accent">
+                You
+              </span>
+            )}
+            {!person.active && (
+              <span className="rounded-pill bg-state-late-bg px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-state-late">
+                Off
+              </span>
+            )}
+            {/* The one thing an owner wants to know about a new starter that
+                the rest of the card cannot tell them: have they actually got
+                in yet. */}
+            {person.mustSetPassword && (
+              <span className="rounded-pill bg-state-new-bg px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-state-new">
+                Invited
+              </span>
+            )}
+          </p>
+          <p className="flex items-center gap-2 truncate text-[12px] text-ink-faint">
+            {roleLabel(person.role)}
+            <span>&middot;</span>
+            {/* The address is not a secret — it is on their payslip. The
+                password is never rendered anywhere. */}
+            <span className="truncate text-ink-soft">{person.email}</span>
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button size="sm" variant="secondary" onClick={open}>
+            Edit
+          </Button>
+
+          {!isOwner && (
+            <>
+              <Switch
+                checked={person.active}
+                onChange={(next) => updateStaff(person.id, { active: next }).catch(onError)}
+                label={`${person.name} active`}
+              />
+              <button
+                onClick={() => removeStaff(person.id).catch(onError)}
+                aria-label={`Remove ${person.name}`}
+                className="grid size-8 place-items-center rounded-[8px] bg-raised text-ink-faint transition-colors hover:bg-state-late-bg hover:text-state-late"
+              >
+                &times;
+              </button>
+            </>
           )}
-          {!person.active && (
-            <span className="rounded-pill bg-state-late-bg px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-state-late">
-              Off
-            </span>
-          )}
-        </p>
-        <p className="flex items-center gap-2 truncate text-[12px] text-ink-faint">
-          {roleLabel(person.role)}
-          <span>&middot;</span>
-          {/* The address is not a secret — it is on their payslip. The
-              password is never rendered anywhere. */}
-          <span className="truncate text-ink-soft">{person.email}</span>
-        </p>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Button size="sm" variant="secondary" onClick={open}>
-          Edit
-        </Button>
-
-        {!isOwner && (
-          <>
-            <Switch
-              checked={person.active}
-              onChange={(next) => updateStaff(person.id, { active: next }).catch(onError)}
-              label={`${person.name} active`}
-            />
-            <button
-              onClick={() => removeStaff(person.id).catch(onError)}
-              aria-label={`Remove ${person.name}`}
-              className="grid size-8 place-items-center rounded-[8px] bg-raised text-ink-faint transition-colors hover:bg-state-late-bg hover:text-state-late"
-            >
-              &times;
-            </button>
-          </>
-        )}
-      </div>
+      {person.active && <ResetLinkRow person={person} onError={onError} />}
     </Card>
+  )
+}
+
+/**
+ * "They cannot get in" — handled from the owner's screen in one tap.
+ *
+ * This is the single most common thing an owner is asked about an account,
+ * usually ten minutes before service. Note it sends a link rather than
+ * revealing or setting anything: the owner can always let somebody back in,
+ * and still never learns their password.
+ */
+function ResetLinkRow({ person, onError }) {
+  const [sent, setSent] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const send = async () => {
+    setBusy(true)
+    try {
+      setSent(await sendPasswordReset(person.email))
+    } catch (err) {
+      onError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      {sent ? (
+        <>
+          <p className="text-[12px] leading-relaxed text-state-ready">
+            {sent.link
+              ? 'Link ready — demo data sends no email, so pass this on yourself:'
+              : `Sent to ${person.email}. Good for an hour, and it works once.`}
+          </p>
+          {sent.link && <CopyableLink link={sent.link} />}
+          <button
+            type="button"
+            onClick={() => setSent(null)}
+            className="mt-2 text-[12px] text-ink-faint transition-colors hover:text-ink"
+          >
+            Done
+          </button>
+        </>
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[12px] leading-relaxed text-ink-faint">
+            {person.mustSetPassword
+              ? 'Waiting for them to choose a password.'
+              : 'Locked out or forgotten it?'}
+          </p>
+          <Button size="sm" variant="quiet" disabled={busy} onClick={send}>
+            {busy ? 'Sending…' : person.mustSetPassword ? 'Send again' : 'Send a link'}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }

@@ -1,27 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { TenantContext } from './context'
 import { setActiveTenant } from './current'
-import { currentSlug } from './resolve'
-import { lookupRestaurantBySlug } from '../data'
+import { tenantTarget } from './resolve'
+import { lookupRestaurantByHost, lookupRestaurantBySlug } from '../data'
 import { Spinner } from '../components/ui'
 
 /**
  * The gate every tenant page sits behind.
  *
- * Resolves the subdomain to a restaurant before a single query runs, so no
+ * Resolves the hostname to a restaurant before a single query runs, so no
  * component can accidentally read another restaurant's data while the
- * lookup is in flight. Three outcomes:
+ * lookup is in flight. Four outcomes:
  *
- *   no slug      -> the root domain: our own admin console
- *   unknown slug -> a clear 404, not a blank screen
+ *   platform     -> our own marketing site and /admin
+ *   unknown      -> a clear 404, not a blank screen
  *   suspended    -> told plainly, because an unpaid account should know why
+ *   ready        -> the restaurant's own app
  */
 export function TenantProvider({ children, onRoot }) {
-  const slug = useMemo(() => currentSlug(), [])
+  const target = useMemo(() => tenantTarget(), [])
   const [state, setState] = useState({ status: 'loading', restaurant: null })
 
   useEffect(() => {
-    if (!slug) {
+    if (target.kind === 'platform') {
       setActiveTenant(null)
       setState({ status: 'root', restaurant: null })
       return
@@ -30,7 +31,14 @@ export function TenantProvider({ children, onRoot }) {
     let cancelled = false
     setState({ status: 'loading', restaurant: null })
 
-    lookupRestaurantBySlug(slug)
+    // A subdomain is answered by slug; anything else is a hostname that may
+    // have been pointed at us by a restaurant that owns its own domain.
+    const lookup =
+      target.kind === 'slug'
+        ? lookupRestaurantBySlug(target.slug)
+        : lookupRestaurantByHost(target.host)
+
+    lookup
       .then((restaurant) => {
         if (cancelled) return
         if (!restaurant) {
@@ -58,16 +66,16 @@ export function TenantProvider({ children, onRoot }) {
     return () => {
       cancelled = true
     }
-  }, [slug])
+  }, [target])
 
   const value = useMemo(
     () => ({
-      slug,
+      slug: state.restaurant?.subdomain ?? (target.kind === 'slug' ? target.slug : null),
       restaurantId: state.restaurant?.id ?? null,
       restaurant: state.restaurant,
       status: state.status,
     }),
-    [slug, state]
+    [target, state]
   )
 
   if (state.status === 'loading') {
@@ -81,10 +89,13 @@ export function TenantProvider({ children, onRoot }) {
   if (state.status === 'root') return onRoot
 
   if (state.status === 'unknown') {
+    // Name what was actually asked for. "that restaurant" with no name is
+    // useless to someone who has mistyped a subdomain.
+    const asked = target.kind === 'slug' ? target.slug : target.host
     return (
       <Notice
         title="We can’t find that restaurant"
-        body={`Nothing is set up at “${slug}”. Check the address, or ask the restaurant for their link.`}
+        body={`Nothing is set up at “${asked}”. Check the address, or ask the restaurant for their link.`}
       />
     )
   }
