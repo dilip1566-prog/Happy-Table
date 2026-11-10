@@ -131,24 +131,53 @@ export function Status({ value, className }) {
  * keeps the familiar statutory shape; vegan gets a ring to read differently
  * at a glance and to survive being printed in mono.
  */
+/**
+ * The mark printed on Indian packaging: a dot in a square, where the shape
+ * and the colour both carry the meaning.
+ *
+ * Three values, not two. A kitchen that serves meat needs its meat marked,
+ * and the earlier version coloured everything that was not vegan green —
+ * which labelled a lamb chop vegetarian. Diet is close enough to an allergen
+ * question that a wrong mark is worse than none, so non-veg gets its own
+ * colour AND its own shape: a triangle reads differently from a circle even
+ * to someone who cannot tell the two colours apart.
+ */
 export function DietMark({ diet, size = 14 }) {
-  const vegan = diet === 'vegan'
-  const color = vegan ? 'var(--color-vegan)' : 'var(--color-veg)'
+  const kind = diet === 'vegan' ? 'vegan' : diet === 'non-veg' ? 'non-veg' : 'veg'
+  const color =
+    kind === 'vegan'
+      ? 'var(--color-vegan)'
+      : kind === 'non-veg'
+        ? 'var(--color-nonveg)'
+        : 'var(--color-veg)'
+  const label = kind === 'vegan' ? 'Vegan' : kind === 'non-veg' ? 'Non-vegetarian' : 'Vegetarian'
+
   return (
     <span
-      aria-label={vegan ? 'Vegan' : 'Vegetarian'}
-      title={vegan ? 'Vegan' : 'Vegetarian'}
+      aria-label={label}
+      title={label}
       className="inline-grid shrink-0 place-items-center rounded-[3px] border-[1.5px]"
       style={{ width: size, height: size, borderColor: color }}
     >
-      <span
-        className={cx('rounded-full', vegan && 'border-[1.5px] bg-transparent')}
-        style={
-          vegan
-            ? { width: size * 0.5, height: size * 0.5, borderColor: color }
-            : { width: size * 0.42, height: size * 0.42, background: color }
-        }
-      />
+      {kind === 'non-veg' ? (
+        <span
+          style={{
+            width: size * 0.52,
+            height: size * 0.46,
+            background: color,
+            clipPath: 'polygon(50% 0, 100% 100%, 0 100%)',
+          }}
+        />
+      ) : (
+        <span
+          className={cx('rounded-full', kind === 'vegan' && 'border-[1.5px] bg-transparent')}
+          style={
+            kind === 'vegan'
+              ? { width: size * 0.5, height: size * 0.5, borderColor: color }
+              : { width: size * 0.42, height: size * 0.42, background: color }
+          }
+        />
+      )}
     </span>
   )
 }

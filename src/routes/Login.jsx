@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { USE_MOCK, subscribe } from '../data'
 import { useRestaurant } from '../tenant/context'
@@ -44,7 +44,10 @@ function landingFor(requested, can) {
  */
 export default function Login() {
   const restaurant = useRestaurant()
-  const [form, setForm] = useState({ email: '', password: '' })
+  const [params] = useSearchParams()
+  // Carried here by the reset screen, so someone who has just set a password
+  // is not asked to type their own address back in immediately afterwards.
+  const [form, setForm] = useState({ email: params.get('email') ?? '', password: '' })
   const [touched, setTouched] = useState(false)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -63,6 +66,12 @@ export default function Login() {
   }, [user, ready, requested, can, navigate])
 
   const emailLooksWrong = touched && form.email.length > 0 && !isValidEmail(form.email)
+
+  // Only pass an address on that is worth prefilling. Half an email in the
+  // box on the next screen is worse than an empty one.
+  const resetHref = isValidEmail(form.email)
+    ? `/reset?email=${encodeURIComponent(form.email.trim())}`
+    : '/reset'
 
   const set = (field) => (event) => {
     setError(null)
@@ -133,15 +142,46 @@ export default function Login() {
             />
           </Field>
 
+          {/* Quiet and small, but always there. It carries whatever address is
+              already typed, so reaching it costs one tap and no retyping. */}
+          <div className="flex justify-end">
+            <Link
+              to={resetHref}
+              className="text-[12px] text-ink-faint underline decoration-line-strong underline-offset-2 transition-colors hover:text-ink"
+            >
+              Forgot your password?
+            </Link>
+          </div>
+
           <Button type="submit" full size="lg" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
 
+        {/* First shift, no password yet. Without this line the only route in
+            is a link labelled for a password they have never had. */}
+        <p className="mt-3.5 text-center text-[12px] leading-relaxed text-ink-faint">
+          First time signing in?{' '}
+          <Link to={resetHref} className="font-semibold text-accent hover:underline">
+            Set your password
+          </Link>
+        </p>
+
         <div className="mt-4 min-h-[52px]">
           <Banner tone="bad" onDismiss={() => setError(null)}>
             {error}
           </Banner>
+
+          {/* A rejected sign-in is the moment the link is actually wanted, and
+              the moment it is furthest from the eye. Repeat it here rather
+              than make them hunt back up the form. */}
+          {error && (
+            <Link to={resetHref}>
+              <Button variant="secondary" full size="sm" className="mt-2">
+                Set or reset your password &rarr;
+              </Button>
+            </Link>
+          )}
         </div>
 
         {USE_MOCK && <DemoAccounts />}
@@ -168,7 +208,10 @@ function DemoAccounts() {
   return (
     <div className="mt-7 rounded-card border border-line bg-sunken p-4">
       <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-faint">
-        Demo accounts &middot; password{' '}
+        {/* "Starting", not "password": anyone who has walked the reset flow
+            has changed theirs, and this list would otherwise be confidently
+            wrong about them until the next reload. */}
+        Demo accounts &middot; starting password{' '}
         <span className="tabular text-accent">demo1234</span>
       </p>
       <ul className="space-y-1.5">

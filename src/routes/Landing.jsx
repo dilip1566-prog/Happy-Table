@@ -76,6 +76,12 @@ function StaffSignIn({ user }) {
 
   const emailLooksWrong = touched && form.email.length > 0 && !isValidEmail(form.email)
 
+  // Same rule as the sign-in page: carry a whole address across, never a
+  // half-typed one.
+  const resetHref = isValidEmail(form.email)
+    ? `/reset?email=${encodeURIComponent(form.email.trim())}`
+    : '/reset'
+
   const set = (field) => (event) => {
     setError(null)
     setForm((f) => ({ ...f, [field]: event.target.value }))
@@ -180,6 +186,18 @@ function StaffSignIn({ user }) {
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
+
+      {/* Both doors in one line: a forgotten password and a never-set one lead
+          to the same screen, which is why it is worded for both. */}
+      <p className="mt-3 text-[12px] leading-relaxed text-ink-faint">
+        <Link to={resetHref} className="underline decoration-line-strong underline-offset-2 transition-colors hover:text-ink">
+          Forgot your password?
+        </Link>
+        <span className="mx-1.5 opacity-50">&middot;</span>
+        <Link to={resetHref} className="font-semibold text-accent hover:underline">
+          First time? Set it here
+        </Link>
+      </p>
 
       {error && (
         <div className="mt-3">

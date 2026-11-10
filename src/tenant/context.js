@@ -19,6 +19,21 @@ export function useRestaurant() {
 }
 
 /**
+ * The restaurant, or null when there isn't one.
+ *
+ * For the handful of screens that render both inside a restaurant and on the
+ * apex. /reset is the whole reason this exists: Firebase allows exactly one
+ * password-reset action URL per project, so that screen has to work at
+ * happytable.co.uk/reset — where no tenant is resolved — as well as on a
+ * restaurant's own subdomain. Everything else should keep using
+ * useRestaurant() and throw loudly, because a tenant page with no tenant is
+ * a bug rather than a state to design around.
+ */
+export function useOptionalRestaurant() {
+  return useContext(TenantContext)?.restaurant ?? null
+}
+
+/**
  * This restaurant's menu sections, in its own order.
  *
  * They ride on the restaurant record rather than a collection of their own:

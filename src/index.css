@@ -74,6 +74,9 @@
      Brightened so the statutory marks stay legible on dark. */
   --color-vegan: #4ec97f;
   --color-veg: #63b85f;
+  /* Maroon, following the mark printed on packaging in India, and chosen so
+     it cannot be mistaken for either green at a glance or in low light. */
+  --color-nonveg: #d1554a;
   --color-nuts: #e0a33c;
 
   /* --- Type -------------------------------------------------------------- */

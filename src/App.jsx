@@ -3,9 +3,10 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { TenantProvider } from './tenant/TenantProvider'
 import { AuthProvider } from './auth/AuthProvider'
 import { Require } from './auth/Guard'
-import SuperAdmin from './routes/admin/SuperAdmin'
+import PlatformRoutes from './routes/platform/PlatformRoutes'
 import Landing from './routes/Landing'
 import Login from './routes/Login'
+import ResetPassword from './routes/ResetPassword'
 import CustomerView from './routes/customer/CustomerView'
 import ManagerLayout from './routes/manager/ManagerLayout'
 import ManagerDashboard from './routes/manager/ManagerDashboard'
@@ -24,21 +25,30 @@ import KitchenView from './routes/kitchen/KitchenView'
 const SeedPage = import.meta.env.DEV ? lazy(() => import('./dev/SeedPage')) : null
 
 /**
- * One deployment, many restaurants.
+ * One deployment, many restaurants, plus the platform itself.
  *
- * The hostname decides which. `bobbys.happtable.co.uk` resolves to a restaurant
- * and renders the app below; the bare apex renders our own admin console
- * instead. TenantProvider sits above everything so no query can run before
- * it is known which restaurant's data to read.
+ * The hostname decides which. `bobbys.happytable.co.uk` resolves to a
+ * restaurant and renders the tenant app below; the bare apex and `www` render
+ * our own marketing site and operator console, which have their own router in
+ * routes/platform. A restaurant's own domain resolves to that restaurant.
+ *
+ * TenantProvider sits above everything so no query can run before it is known
+ * which restaurant's data to read — and so the platform's screens, which have
+ * no restaurant at all, never get a stale one.
  */
 export default function App() {
   return (
-    <TenantProvider onRoot={<SuperAdmin />}>
+    <TenantProvider onRoot={<PlatformRoutes />}>
       <AuthProvider>
         <Routes>
           {/* The restaurant's front door: guests one way, staff the other. */}
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+
+          {/* Public, and it has to be: the person arriving here cannot sign
+              in yet — either they have never had a password or they have
+              forgotten it. The link in the URL is the only credential. */}
+          <Route path="/reset" element={<ResetPassword />} />
 
           {/* Public: the guest's phone. /customer is the menu, readable by
               anyone; ordering unlocks once a server hands over a table code.
