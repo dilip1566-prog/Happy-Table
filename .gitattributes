@@ -1,0 +1,26 @@
+# Binary files git might otherwise mistake for text.
+#
+# Git guesses by looking for NUL bytes near the start of a file. A PDF
+# written by reportlab has several kilobytes of plain-text header before its
+# first compressed stream, so the guess comes out wrong — and on Windows,
+# where core.autocrlf is usually true, that means every LF in the file is
+# rewritten to CRLF on checkout and the PDF arrives corrupted. The file goes
+# into the repository intact and comes out broken, which is the worst shape
+# for a bug like this to take.
+#
+# `-text` turns the guessing off for these extensions entirely: no line
+# ending conversion in either direction, ever.
+
+*.pdf  -text
+*.jpg  -text
+*.jpeg -text
+*.png  -text
+*.gif  -text
+*.webp -text
+*.ico  -text
+*.woff -text
+*.woff2 -text
+*.ttf  -text
+*.otf  -text
+*.zip  -text
+*.xlsx -text
