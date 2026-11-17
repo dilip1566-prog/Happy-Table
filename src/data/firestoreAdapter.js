@@ -33,6 +33,7 @@ import {
 import { isValidEmail, normaliseEmail } from '../lib/validate'
 import { PASSWORD_MIN, passwordProblem, randomPassword } from '../lib/passwords'
 import { slugProblem } from '../lib/slug'
+import { nameMatches } from '../lib/guestName'
 import {
   addDoc,
   arrayRemove,
@@ -235,7 +236,18 @@ export async function suggestAccessCodes(count) {
   return out
 }
 
-export async function findSessionByCode(code) {
+/**
+ * Resolve a code a guest has typed in, against the name they typed with it.
+ *
+ * Both are required when the party was recorded under a name. A code alone
+ * is a number somebody could have overheard; a code with the right first
+ * name came from the person the waiter handed it to.
+ *
+ * A wrong name comes back as a mismatch rather than as "no such code", and
+ * carries nothing identifying with it, so a party's name can never be read
+ * out of this by anyone who does not already know it.
+ */
+export async function findSessionByCode(code, name) {
   const wanted = String(code).trim()
 
   // The table's own code is one indexed equality query. A payer code lives
@@ -270,6 +282,11 @@ export async function findSessionByCode(code) {
 
   if (!doc0) return null
   const session = { id: doc0.id, ...doc0.data() }
+
+  if (session.party_name && !nameMatches(name, session.party_name)) {
+    return { table_number: null, nameMismatch: true }
+  }
+
   return {
     session_id: session.session_id ?? session.id,
     party_name: session.party_name ?? null,

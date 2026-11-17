@@ -408,7 +408,7 @@ export default function CustomerView() {
             onClick={() => setCodeOpen(true)}
             className="rise mx-auto flex w-full max-w-lg items-center justify-center gap-2.5 rounded-card bg-accent px-5 py-4 text-white shadow-float transition-transform active:scale-[0.99]"
           >
-            <span className="text-[15px] font-semibold">Enter your code to order</span>
+            <span className="text-[15px] font-semibold">Enter your name and code to order</span>
           </button>
         </div>
       )}
@@ -541,31 +541,41 @@ function Legend() {
  * it is the acknowledgement, not a password.
  */
 function CodeSheet({ onClose, onFound }) {
+  const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState(null)
   const [found, setFound] = useState(null)
+  const [wrongName, setWrongName] = useState(false)
+
+  const ready = name.trim().length >= 2 && code.trim().length >= 2
 
   /**
-   * The code is checked as it is typed, so the moment it is right the guest
-   * sees whose table they are joining and goes straight through. A correct
-   * code should not then need a button press to confirm what it already is.
+   * Checked as it is typed, so a guest who has got both right goes straight
+   * through rather than hunting for a button to confirm what the screen
+   * already knows.
+   *
+   * Note what is NOT shown until both match: the party's name. The waiter
+   * wrote it down and the guest is being asked to produce it, so echoing it
+   * back off the code alone would hand over the answer and leave the name
+   * doing no work at all.
    */
   useEffect(() => {
-    const entered = code.trim()
-    if (entered.length < 2) {
+    if (!ready) {
       setFound(null)
+      setWrongName(false)
       return
     }
 
     let cancelled = false
     setChecking(true)
 
-    findSessionByCode(entered)
+    findSessionByCode(code.trim(), name.trim())
       .then((match) => {
         if (cancelled) return
         if (match?.table_number) {
           setFound(match)
+          setWrongName(false)
           setError(null)
           // A breath so the name registers before the menu replaces it.
           setTimeout(() => {
@@ -573,6 +583,7 @@ function CodeSheet({ onClose, onFound }) {
           }, 650)
         } else {
           setFound(null)
+          setWrongName(Boolean(match?.nameMismatch))
         }
       })
       .catch((err) => !cancelled && setError(err))
@@ -582,45 +593,88 @@ function CodeSheet({ onClose, onFound }) {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code])
+  }, [code, name, ready])
 
   const submit = async (event) => {
     event?.preventDefault()
-    const entered = code.trim()
-    if (entered.length < 2) return
+    if (!ready) return
 
     if (found?.table_number) return onFound(found)
 
-    setError(`Code ${entered} is not open yet. Ask your server for the number.`)
+    // Two different dead ends, and they need two different answers: one is
+    // "go and ask again", the other is "you are at the right table, try the
+    // spelling". Collapsing them sends half the guests on the wrong errand.
+    if (wrongName) {
+      setError(
+        `That code is open, but not under “${name.trim()}”. Check how your waiter spelled it.`
+      )
+      return
+    }
+
+    setError(`Code ${code.trim()} is not open yet. Ask your server for the number.`)
     setCode('')
   }
 
   return (
-    <Sheet title={found ? `${found.party_name ?? 'Your table'} · Table No ${found.table_number}` : 'Your table code'} width="max-w-sm" onClose={onClose}>
+    <Sheet title={found ? `${found.party_name ?? 'Your table'} · Table No ${found.table_number}` : 'Your name and code'} width="max-w-sm" onClose={onClose}>
       <form onSubmit={submit}>
         <p className="text-[15px] font-medium leading-relaxed text-ink">
-          Please key in your code — or ask your waiter for the code number.
+          Your first name and the code your waiter gave you.
         </p>
         <p className="mt-2 text-[13px] leading-relaxed text-ink-faint">
-          You can browse the whole menu without one. The code is only needed to
+          You can browse the whole menu without them. Both are only needed to
           send an order to the kitchen.
         </p>
 
-        <input
-          autoFocus
-          value={code}
-          onChange={(event) => {
-            setError(null)
-            setCode(event.target.value.replace(/\D/g, '').slice(0, 3))
-          }}
-          inputMode="numeric"
-          autoComplete="off"
-          aria-label="Table code"
-          // Dashes, not a sample number. At this size a grey "65" reads as a
-          // value that is already filled in, and the guest types nothing.
-          placeholder="– –"
-          className={`${inputClass} tabular mt-5 h-16 text-center text-[30px] font-bold tracking-[0.3em] placeholder:font-normal placeholder:tracking-[0.2em] placeholder:text-ink-faint/50`}
-        />
+        <label className="mt-5 block">
+          <span className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+            First name
+          </span>
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => {
+              setError(null)
+              setName(event.target.value.slice(0, 40))
+            }}
+            autoComplete="given-name"
+            autoCapitalize="words"
+            spellCheck="false"
+            aria-label="Your first name"
+            placeholder="As you gave it to the waiter"
+            className={`${inputClass} h-13 text-[17px] ${wrongName ? 'border-state-late' : ''}`}
+          />
+        </label>
+
+        <label className="mt-3.5 block">
+          <span className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-faint">
+            Table code
+          </span>
+          <input
+            value={code}
+            onChange={(event) => {
+              setError(null)
+              setCode(event.target.value.replace(/\D/g, '').slice(0, 3))
+            }}
+            inputMode="numeric"
+            autoComplete="off"
+            aria-label="Table code"
+            // Dashes, not a sample number. At this size a grey "65" reads as
+            // a value already filled in, and the guest types nothing.
+            placeholder="– –"
+            className={`${inputClass} tabular h-16 text-center text-[30px] font-bold tracking-[0.3em] placeholder:font-normal placeholder:tracking-[0.2em] placeholder:text-ink-faint/50`}
+          />
+        </label>
+
+        {/* Said at the moment it happens, not only on submit — a guest who
+            has typed both and is staring at a screen that has not moved
+            needs to be told why. */}
+        {wrongName && !found && (
+          <p className="rise mt-3 rounded-control border border-state-late/35 bg-state-late-bg px-4 py-3 text-[13px] leading-relaxed text-state-late">
+            That code is open, but not under &ldquo;{name.trim()}&rdquo;. Check
+            how your waiter spelled it, or ask them again.
+          </p>
+        )}
 
         {found && (
           <p className="rise mt-3 rounded-control border border-state-ready/35 bg-state-ready-bg px-4 py-3 text-center">
@@ -633,14 +687,8 @@ function CodeSheet({ onClose, onFound }) {
           </p>
         )}
 
-        <Button
-          full
-          size="xl"
-          className="mt-3"
-          disabled={checking || code.trim().length < 2}
-          onClick={submit}
-        >
-          {checking ? 'Checking…' : found ? 'Start ordering' : 'Check code'}
+        <Button full size="xl" className="mt-3" disabled={checking || !ready} onClick={submit}>
+          {checking ? 'Checking…' : found ? 'Start ordering' : 'Check'}
         </Button>
 
         <button

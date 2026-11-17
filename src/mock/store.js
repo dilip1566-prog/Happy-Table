@@ -19,6 +19,7 @@ import { tenantUrl } from '../tenant/resolve'
 import { isValidEmail, normaliseEmail } from '../lib/validate'
 import { passwordProblem } from '../lib/passwords'
 import { slugProblem } from '../lib/slug'
+import { nameMatches } from '../lib/guestName'
 
 const LATENCY_MS = 180
 
@@ -459,8 +460,22 @@ export function suggestAccessCodes(count) {
   return out
 }
 
-/** Resolve a code a guest has typed in. */
-export async function findSessionByCode(code) {
+/**
+ * Resolve a code a guest has typed in, against the name they typed with it.
+ *
+ * Both are required when the party was recorded under a name, which is
+ * every party a waiter has seated properly. A code alone is a number
+ * somebody could have overheard; a code with the right first name came from
+ * the person the waiter handed it to.
+ *
+ * A wrong name does not come back as "no such code" — the guest is far more
+ * likely to have spelt it differently from the waiter than to be trying it
+ * on, and sending them round the "ask for the number again" loop for a
+ * spelling is a bad trade. What comes back instead says the name did not
+ * match and carries nothing identifying, so the party's name is never
+ * readable without knowing it already.
+ */
+export async function findSessionByCode(code, name) {
   await wait(160)
   const wanted = String(code ?? '').trim()
 
@@ -476,6 +491,10 @@ export async function findSessionByCode(code) {
     return false
   })
   if (!session) return null
+
+  if (session.party_name && !nameMatches(name, session.party_name)) {
+    return { table_number: null, nameMismatch: true }
+  }
 
   return {
     session_id: session.session_id,
