@@ -212,6 +212,23 @@ button,
   animation: rise 0.22s ease-out both;
 }
 
+/* Scroll reveal on the marketing page.
+   The `reveal` class is added by JavaScript and never by the markup — see
+   useReveal in routes/business/LandingShowcase.jsx. Hiding something in CSS
+   that only JavaScript can unhide is how a page ends up permanently blank
+   for anyone the observer fails for. */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.55s ease-out,
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
 @keyframes sheet-up {
   from {
     transform: translateY(100%);
