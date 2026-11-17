@@ -136,8 +136,10 @@ already branches on `USE_MOCK` and collapses back to a single cached
 
 ## Staff sign-in & permissions
 
-Guests never sign in — they scan and order. Everything staff-facing sits
-behind email and password at `/login`, and inline on the front door at `/`.
+Guests never sign in. They scan to read the menu, and a waiter hands them a
+code when the party is seated — that code, not the scan, is what lets them
+order. Everything staff-facing sits behind email and password at `/login`,
+and inline on the front door at `/`.
 
 ### Nobody else sets your password
 

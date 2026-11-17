@@ -60,10 +60,11 @@ const SURFACES = [
     id: 'guest',
     eyebrow: 'The guest’s own phone',
     title: 'They order before you’ve crossed the room',
-    lead: 'No app to download, no hardware to buy, nothing to charge overnight. They scan the code on the table and your menu is in their hand.',
+    lead: 'No app to download, no hardware to buy, nothing to charge overnight. They scan the code on the table and your menu is in their hand — but only a waiter can let them order.',
     points: [
-      'The whole menu, browsable the moment they sit down',
-      'A short table code unlocks ordering when the party is ready',
+      'Scanning opens the menu to read, and does nothing else',
+      'A waiter takes a first name and hands over a short code',
+      'That code is what unlocks ordering, so nobody orders uninvited',
       'Diet and allergen marks on every dish, nuts tracked separately',
       'Order notes in the guest’s own words, straight to the pass',
       'A live countdown once the kitchen quotes a time',
@@ -79,7 +80,7 @@ const SURFACES = [
     lead: 'Not a list of table numbers. The actual layout, with who is sitting where and which tables still need wiping down.',
     points: [
       'Live table states, including “guests gone, not yet cleared”',
-      'Seat a party in one tap; approve the ones who scanned early',
+      'Seat a party under their first name and hand them a code in one tap',
       'Push 6, 7 and 8 together into one party and one bill',
       'Join latecomers to a table already eating, or merge two parties',
       'Settle by cash or card at the table and close the tab',
@@ -132,7 +133,7 @@ const STEPS = [
 const FAQS = [
   {
     q: 'Do our guests have to download anything?',
-    a: 'No. They scan the code on the table and the menu opens in whatever browser their phone already has. There is no app, no account and no sign-up.',
+    a: 'No. They scan the code on the table and the menu opens in whatever browser their phone already has. There is no app, no account and no sign-up. Scanning only opens the menu to read — a waiter hands over a short code when the party is seated, and that is what lets them order.',
   },
   {
     q: 'What hardware do we need to buy?',

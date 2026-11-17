@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { findSessionByCode, knockOnTable, submitOrder } from '../../data'
+import { findSessionByCode, submitOrder } from '../../data'
 import { useTableStatus } from '../../hooks/useTables'
 import { useMenu } from '../../hooks/useMenu'
 import { useInventory } from '../../hooks/useInventory'
@@ -11,7 +11,6 @@ import { Banner, Button, Sheet, Spinner, inputClass } from '../../components/ui'
 import DishCard from './DishCard'
 import CartSheet from './CartSheet'
 import OrderTracker from './OrderTracker'
-import WaitingRoom from './WaitingRoom'
 
 /**
  * /customer/:tableId — the guest's phone, and the same page on a tablet.
@@ -30,9 +29,27 @@ export default function CustomerView() {
   const restaurant = useRestaurant()
   const categories = useCategories()
 
-  // No table in the URL means nobody has been seated yet: the menu is open to
-  // read, but nothing can be sent to the kitchen until a code is entered.
-  const browsing = !tableId
+  // What unlocks ordering is a code from a waiter, and nothing else.
+  //
+  // It used to be the table in the URL, which meant scanning the sticker was
+  // enough — and a sticker is readable by anyone walking past the window.
+  // Now a scan opens the menu to read and leaves it at that; the code is
+  // handed over in person once the party is actually seated, and it is the
+  // code that is remembered here.
+  //
+  // Per device and per tab, deliberately. Each phone on the table redeems
+  // for itself, which is what makes a party of eight able to run separate
+  // tabs, and nothing survives the browser being closed.
+  const [unlocked, setUnlocked] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('guest-access-v1')
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  })
+
+  const browsing = !tableId || unlocked?.table !== String(tableId)
   const { table, loading: tableLoading } = useTableStatus(tableId)
   const { menu, loading: menuLoading } = useMenu()
   const { soldOutItems, isSoldOut } = useInventory()
@@ -69,23 +86,16 @@ export default function CustomerView() {
   // they tap Add. Dismissible — reading the menu never requires a code.
   const [codeOpen, setCodeOpen] = useState(() => !tableId)
 
-  const knocked = useRef(false)
-  useEffect(() => {
-    if (browsing || knocked.current) return
-    knocked.current = true
-    knockOnTable(tableId).catch(setError)
-  }, [browsing, tableId])
+  // Nothing happens when a guest scans. No knock, no request to be let in,
+  // no row appearing on the floor plan — scanning is reading a menu, and a
+  // menu that announces every passer-by to the host stand is a menu that
+  // trains staff to ignore it.
 
   // Once a code lands the route gains a table, and the sheet that asked for
   // it has nothing left to ask — without this it stays open over the menu.
   useEffect(() => {
     if (!browsing) setCodeOpen(false)
   }, [browsing])
-
-  const [wasSeated, setWasSeated] = useState(false)
-  useEffect(() => {
-    if (status === 'occupied') setWasSeated(true)
-  }, [status])
 
   // A dish that sells out while sitting in a cart is removed from it.
   const soldOutKey = soldOutItems.join('|')
@@ -223,8 +233,18 @@ export default function CustomerView() {
     )
   }
 
+  // No waiting room any more. A guest holding a code was handed it by a
+  // waiter standing in front of them, so there is nobody left to wait for.
+  //
+  // Reaching here means the code was accepted but the table record has not
+  // caught up yet — a moment of lag between two writes, not a state anyone
+  // should be made to read a paragraph about.
   if (!browsing && status !== 'occupied') {
-    return <WaitingRoom tableId={tableId} status={status} wasSeated={wasSeated} />
+    return (
+      <div className="grid min-h-full place-items-center">
+        <Spinner label="Opening your table" />
+      </div>
+    )
   }
 
   return (
@@ -401,9 +421,17 @@ export default function CustomerView() {
               ? { code: match.tab_code, label: match.tab_label, table: match.table_number }
               : null
             setTab(next)
+
+            // The redeemed code itself, which is what now unlocks ordering.
+            // Written before navigating, because the route change remounts
+            // this component and it reads the flag on the way up.
+            const access = { table: String(match.table_number), at: Date.now() }
+            setUnlocked(access)
+
             try {
               if (next) sessionStorage.setItem('guest-tab-v1', JSON.stringify(next))
               else sessionStorage.removeItem('guest-tab-v1')
+              sessionStorage.setItem('guest-access-v1', JSON.stringify(access))
             } catch {
               /* private mode — they just lose the split on a refresh */
             }
