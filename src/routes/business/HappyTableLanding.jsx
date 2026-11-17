@@ -323,7 +323,7 @@ const STEPS = [
   {
     n: '3',
     title: 'You add your team',
-    body: 'Owner, manager, waiter and kitchen, with twenty-odd permissions you set yourself — because “the manager does everything except the takings” is a rule only you can write.',
+    body: 'Owner, manager, waiter and kitchen, with fourteen permissions you set yourself — because “the manager does everything except the takings” is a rule only you can write.',
   },
   {
     n: '4',

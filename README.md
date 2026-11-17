@@ -204,7 +204,7 @@ across pages: a manager opens the billing screen but must not see the day's
 takings. Route-level gating would force that to be all-or-nothing.
 
 The catalogue lives in [src/auth/permissions.js](src/auth/permissions.js) —
-thirteen capabilities across Floor, Orders, Menu, Money and People.
+fourteen capabilities across Floor, Orders, Menu, Money and People.
 
 ### Four roles, owner-editable
 
